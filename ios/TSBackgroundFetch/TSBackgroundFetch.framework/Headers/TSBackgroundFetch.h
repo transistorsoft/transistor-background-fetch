@@ -11,12 +11,19 @@
 
 @interface TSBackgroundFetch : NSObject
 
+@property (nonatomic) BOOL stopOnTerminate;
+@property (readonly) BOOL configured;
+@property (readonly) BOOL active;
+
 + (TSBackgroundFetch *)sharedInstance;
 -(void) performFetchWithCompletionHandler:(void (^)(UIBackgroundFetchResult))handler;
--(void) addListener:(void (^)(void))handler;
+-(void) configure:(NSDictionary*)config;
+-(void) addListener:(NSString*)componentName callback:(void (^)(void))callback;
+-(void) removeListener:(NSString*)componentName;
+-(BOOL) hasListener:(NSString*)componentName;
 -(BOOL) start;
 -(void) stop;
--(void) finish:(UIBackgroundFetchResult) result;
+-(void) finish:(NSString*)tag result:(UIBackgroundFetchResult) result;
 
 @end
 
