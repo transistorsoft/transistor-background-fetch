@@ -6,7 +6,6 @@
 //  Copyright © 2016 Christopher Scott. All rights reserved.
 //
 
-#import <Foundation/Foundation.h>
 #import "TSBackgroundFetch.h"
 
 static NSString *const TAG = @"TSBackgroundFetch";
@@ -49,12 +48,13 @@ static NSString *const TAG = @"TSBackgroundFetch";
     return self;
 }
 
-- (void) configure:(NSDictionary*)config
+- (UIBackgroundRefreshStatus) configure:(NSDictionary*)config
 {
     [self applyConfig:config];
     NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
     [userDefaults setObject:config forKey:TAG];
     _configured = YES;
+    return [self status];
 }
 
 - (void) applyConfig:(NSDictionary*)config
@@ -64,6 +64,23 @@ static NSString *const TAG = @"TSBackgroundFetch";
     }
 }
 
+-(UIBackgroundRefreshStatus) status
+{
+    UIBackgroundRefreshStatus status = [[UIApplication sharedApplication] backgroundRefreshStatus];
+    /*
+    if ([[UIApplication sharedApplication] backgroundRefreshStatus] == UIBackgroundRefreshStatusAvailable) {
+        
+        NSLog(@"Background updates are available for the app.");
+    }else if([[UIApplication sharedApplication] backgroundRefreshStatus] == UIBackgroundRefreshStatusDenied)
+    {
+        NSLog(@"The user explicitly disabled background behavior for this app or for the whole system.");
+    }else if([[UIApplication sharedApplication] backgroundRefreshStatus] == UIBackgroundRefreshStatusRestricted)
+    {
+        NSLog(@"Background updates are unavailable and the user cannot enable them again. For example, this status can occur when parental controls are in effect for the current user.");
+    }
+     */
+    return status;
+}
 -(void) addListener:(NSString*)componentName callback:(void (^)(void))callback
 {
     NSLog(@"- %@ addListener: %@", TAG, componentName);
