@@ -66,21 +66,9 @@ static NSString *const TAG = @"TSBackgroundFetch";
 
 -(UIBackgroundRefreshStatus) status
 {
-    UIBackgroundRefreshStatus status = [[UIApplication sharedApplication] backgroundRefreshStatus];
-    /*
-    if ([[UIApplication sharedApplication] backgroundRefreshStatus] == UIBackgroundRefreshStatusAvailable) {
-        
-        NSLog(@"Background updates are available for the app.");
-    }else if([[UIApplication sharedApplication] backgroundRefreshStatus] == UIBackgroundRefreshStatusDenied)
-    {
-        NSLog(@"The user explicitly disabled background behavior for this app or for the whole system.");
-    }else if([[UIApplication sharedApplication] backgroundRefreshStatus] == UIBackgroundRefreshStatusRestricted)
-    {
-        NSLog(@"Background updates are unavailable and the user cannot enable them again. For example, this status can occur when parental controls are in effect for the current user.");
-    }
-     */
-    return status;
+    return [[UIApplication sharedApplication] backgroundRefreshStatus];
 }
+
 -(void) addListener:(NSString*)componentName callback:(void (^)(void))callback
 {
     NSLog(@"- %@ addListener: %@", TAG, componentName);
@@ -130,8 +118,11 @@ static NSString *const TAG = @"TSBackgroundFetch";
 - (void) performFetchWithCompletionHandler:(void (^)(UIBackgroundFetchResult))handler
 {
     NSLog(@"- %@ performFetchWithCompletionHandler", TAG);
+    
     _active = YES;
-    [responses removeAllObjects];
+    @synchronized (responses) {
+        [responses removeAllObjects];
+    }
     
     if ([listeners count] > 0) {
         completionHandler = handler;
@@ -157,26 +148,30 @@ static NSString *const TAG = @"TSBackgroundFetch";
 
 - (void) finish:(NSString*)componentName result:(UIBackgroundFetchResult) result
 {
-    if (completionHandler == nil) {
-        NSLog(@"- %@ WARNING: completionHandler is nil.  No fetch event to finish.  Ignored", TAG);
-        return;
-    }
-    if ([responses objectForKey:componentName]) {
-        NSLog(@"- %@ WARNING: finish already called for %@.  Ignored", TAG, componentName);
-        return;
-    }
-    if (![self hasListener:componentName]) {
-        NSLog(@"- %@ WARNING: no listener found to finish for %@.  Ignored", TAG, componentName);
-        return;
-    }
-    NSLog(@"- %@ finish: %@", TAG, componentName);
-    [responses setObject:@(result) forKey:componentName];
-    
-    if (launchedInBackground && (bootBufferTimer == nil)) {
-        // Give other modules 5 second buffer before we finish.  Other modules may not yet have registed their callback when booted in background
-        bootBufferTimer = [NSTimer scheduledTimerWithTimeInterval:5 target:self selector:@selector(onBootBufferTimeout:) userInfo:nil repeats:NO];
-    } else {
-        [self doFinish];
+    @synchronized (responses) {
+        if (completionHandler == nil) {
+            NSLog(@"- %@ WARNING: completionHandler is nil.  No fetch event to finish.  Ignored", TAG);
+            return;
+        }
+        if ([responses objectForKey:componentName]) {
+            NSLog(@"- %@ WARNING: finish already called for %@.  Ignored", TAG, componentName);
+            return;
+        }
+        if (![self hasListener:componentName]) {
+            NSLog(@"- %@ WARNING: no listener found to finish for %@.  Ignored", TAG, componentName);
+            return;
+        }
+        NSLog(@"- %@ finish: %@", TAG, componentName);
+        [responses setObject:@(result) forKey:componentName];
+        
+        if (launchedInBackground && (bootBufferTimer == nil)) {
+            // Give other modules 5 second buffer before we finish.  Other modules may not yet have registed their callback when booted in background
+            bootBufferTimer = [NSTimer timerWithTimeInterval:5 target:self selector:@selector(doFinish) userInfo:nil repeats:NO];
+            [[NSRunLoop mainRunLoop] addTimer:bootBufferTimer forMode:NSRunLoopCommonModes];
+            
+        } else {
+            [self doFinish];
+        }
     }
 }
 
@@ -191,28 +186,31 @@ static NSString *const TAG = @"TSBackgroundFetch";
         [bootBufferTimer invalidate];
         bootBufferTimer = nil;
     }
-    if ([[responses allKeys] count] == [[listeners allKeys] count]) {
-        NSUInteger fetchResult = UIBackgroundFetchResultNoData;
-        //for (id response in responses) {
-        for (NSString* componentName in responses) {
-            id response = [responses objectForKey:componentName];
-            if ([response integerValue] == UIBackgroundFetchResultFailed) {
-                fetchResult = UIBackgroundFetchResultFailed;
-                break;
-            } else if ([response integerValue] == UIBackgroundFetchResultNewData) {
-                fetchResult = UIBackgroundFetchResultNewData;
+    
+    @synchronized (responses) {
+        if ([[responses allKeys] count] == [[listeners allKeys] count]) {
+            NSUInteger fetchResult = UIBackgroundFetchResultNoData;
+            //for (id response in responses) {
+            for (NSString* componentName in responses) {
+                id response = [responses objectForKey:componentName];
+                if ([response integerValue] == UIBackgroundFetchResultFailed) {
+                    fetchResult = UIBackgroundFetchResultFailed;
+                    break;
+                } else if ([response integerValue] == UIBackgroundFetchResultNewData) {
+                    fetchResult = UIBackgroundFetchResultNewData;
+                }
             }
+            NSLog(@"- %@ Complete, UIBackgroundFetchResult: %lu, responses: %lu", TAG, (long)fetchResult, (long)[responses count]);
+            completionHandler(fetchResult);
+            _active = NO;
+            [responses removeAllObjects];
+            completionHandler = nil;
+            
+            if (launchedInBackground && _stopOnTerminate) {
+                [self stop];
+            }
+            launchedInBackground = NO;
         }
-        NSLog(@"- %@ Complete, UIBackgroundFetchResult: %lu, responses: %lu", TAG, (long)fetchResult, (long)[responses count]);
-        completionHandler(fetchResult);
-        _active = NO;
-        [responses removeAllObjects];
-        completionHandler = nil;
-        
-        if (launchedInBackground && _stopOnTerminate) {
-            [self stop];
-        }
-        launchedInBackground = NO;
     }
 }
 
