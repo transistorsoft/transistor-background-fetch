@@ -15,7 +15,10 @@ static NSString *const TAG = @"TSBackgroundFetch";
     NSMutableDictionary *responses;
     
     void (^completionHandler)(UIBackgroundFetchResult);
+    BOOL hasReceivedEvent;
     BOOL launchedInBackground;
+    NSTimeInterval minimumFetchInterval;
+    
     NSTimer *bootBufferTimer;
 }
 
@@ -32,13 +35,12 @@ static NSString *const TAG = @"TSBackgroundFetch";
 -(instancetype)init
 {
     self = [super init];
-    
-    UIApplication *app = [UIApplication sharedApplication];
-    launchedInBackground = app.applicationState == UIApplicationStateBackground;
-    
+
+    hasReceivedEvent = NO;
     _stopOnTerminate = YES;
     _configured = NO;
     _active = NO;
+    minimumFetchInterval = UIApplicationBackgroundFetchIntervalMinimum;
     
     bootBufferTimer = nil;
     listeners = [NSMutableDictionary new];
@@ -59,8 +61,13 @@ static NSString *const TAG = @"TSBackgroundFetch";
 
 - (void) applyConfig:(NSDictionary*)config
 {
-    if (config[@"stopOnTerminate"]) {
+    NSLog(@"[%@ configure]: %@", TAG, config);
+
+    if ([config objectForKey:@"stopOnTerminate"]) {
         _stopOnTerminate = [[config objectForKey:@"stopOnTerminate"] boolValue];
+    }
+    if ([config objectForKey:@"minimumFetchInterval"]) {
+        minimumFetchInterval = [[config objectForKey:@"minimumFetchInterval"] doubleValue] * 60;
     }
 }
 
@@ -71,7 +78,7 @@ static NSString *const TAG = @"TSBackgroundFetch";
 
 -(void) addListener:(NSString*)componentName callback:(void (^)(void))callback
 {
-    NSLog(@"- %@ addListener: %@", TAG, componentName);
+    NSLog(@"[%@ addListener]: %@", TAG, componentName);
     [listeners setObject:callback forKey:componentName];
     
     // Run callback immediately if app was launched due to background-fetch event.
@@ -90,7 +97,7 @@ static NSString *const TAG = @"TSBackgroundFetch";
 -(void) removeListener:(NSString*)componentName
 {
     if ([listeners objectForKey:componentName]) {
-        NSLog(@"- %@ removeListener: %@", TAG, componentName);
+        NSLog(@"[%@ removeListener]: %@", TAG, componentName);
         [listeners removeObjectForKey:componentName];
     }
 }
@@ -100,12 +107,12 @@ static NSString *const TAG = @"TSBackgroundFetch";
     UIApplication *app = [UIApplication sharedApplication];
     
     if (![app respondsToSelector:@selector(setMinimumBackgroundFetchInterval:)]) {
-        NSLog(@"- %@: background fetch unsupported for this version of iOS", TAG);
+        NSLog(@"[%@ start] background fetch unsupported for this version of iOS", TAG);
         return NO;
     }
     
-    [app setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalMinimum];
-    NSLog(@"- %@ started", TAG);
+    [app setMinimumBackgroundFetchInterval:minimumFetchInterval];
+    NSLog(@"[%@ start]", TAG);
     return YES;
 }
 
@@ -115,10 +122,13 @@ static NSString *const TAG = @"TSBackgroundFetch";
     [app setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalNever];
 }
 
-- (void) performFetchWithCompletionHandler:(void (^)(UIBackgroundFetchResult))handler
+- (void) performFetchWithCompletionHandler:(void (^)(UIBackgroundFetchResult))handler applicationState:(UIApplicationState)state
 {
-    NSLog(@"- %@ performFetchWithCompletionHandler", TAG);
-    
+    NSLog(@"[%@ performFetchWithCompletionHandler]", TAG);
+    if (!hasReceivedEvent) {
+        hasReceivedEvent = YES;
+        launchedInBackground = (state == UIApplicationStateBackground);
+    }
     _active = YES;
     @synchronized (responses) {
         [responses removeAllObjects];
@@ -150,18 +160,18 @@ static NSString *const TAG = @"TSBackgroundFetch";
 {
     @synchronized (responses) {
         if (completionHandler == nil) {
-            NSLog(@"- %@ WARNING: completionHandler is nil.  No fetch event to finish.  Ignored", TAG);
+            NSLog(@"[%@ finish] WARNING: completionHandler is nil.  No fetch event to finish.  Ignored", TAG);
             return;
         }
         if ([responses objectForKey:componentName]) {
-            NSLog(@"- %@ WARNING: finish already called for %@.  Ignored", TAG, componentName);
+            NSLog(@"[%@ finish] WARNING: finish already called for %@.  Ignored", TAG, componentName);
             return;
         }
         if (![self hasListener:componentName]) {
-            NSLog(@"- %@ WARNING: no listener found to finish for %@.  Ignored", TAG, componentName);
+            NSLog(@"%@ finish] WARNING: no listener found to finish for %@.  Ignored", TAG, componentName);
             return;
         }
-        NSLog(@"- %@ finish: %@", TAG, componentName);
+        NSLog(@"[%@ finish]: %@", TAG, componentName);
         [responses setObject:@(result) forKey:componentName];
         
         if (launchedInBackground && (bootBufferTimer == nil)) {
@@ -200,7 +210,7 @@ static NSString *const TAG = @"TSBackgroundFetch";
                     fetchResult = UIBackgroundFetchResultNewData;
                 }
             }
-            NSLog(@"- %@ Complete, UIBackgroundFetchResult: %lu, responses: %lu", TAG, (long)fetchResult, (long)[responses count]);
+            NSLog(@"[%@ doFinish] Complete, UIBackgroundFetchResult: %lu, responses: %lu", TAG, (long)fetchResult, (long)[responses count]);
             completionHandler(fetchResult);
             _active = NO;
             [responses removeAllObjects];
@@ -216,7 +226,7 @@ static NSString *const TAG = @"TSBackgroundFetch";
 
 - (void) onAppTerminate
 {
-    NSLog(@"- TSBackgroundFetch onAppTerminate");
+    NSLog(@"[%@ onAppTerminate]", TAG);
     if (_stopOnTerminate) {
         [self stop];
     }
