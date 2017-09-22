@@ -50,15 +50,19 @@ static NSString *const TAG = @"TSBackgroundFetch";
     return self;
 }
 
-- (UIBackgroundRefreshStatus) configure:(NSDictionary*)config
+- (void) configure:(NSDictionary*)config callback:(void(^)(UIBackgroundRefreshStatus status))callback
+{
+    [self configure:config];
+    [self status:callback];
+}
+
+-(void) configure:(NSDictionary*)config
 {
     [self applyConfig:config];
     NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
     [userDefaults setObject:config forKey:TAG];
     _configured = YES;
-    return [self status];
 }
-
 - (void) applyConfig:(NSDictionary*)config
 {
     NSLog(@"[%@ configure]: %@", TAG, config);
@@ -71,15 +75,19 @@ static NSString *const TAG = @"TSBackgroundFetch";
     }
 }
 
--(UIBackgroundRefreshStatus) status
+-(void) status:(void(^)(UIBackgroundRefreshStatus status))callback
 {
-    return [[UIApplication sharedApplication] backgroundRefreshStatus];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        callback([[UIApplication sharedApplication] backgroundRefreshStatus]);
+    });
 }
 
 -(void) addListener:(NSString*)componentName callback:(void (^)(void))callback
 {
     NSLog(@"[%@ addListener]: %@", TAG, componentName);
-    [listeners setObject:callback forKey:componentName];
+    @synchronized(listeners) {
+        [listeners setObject:callback forKey:componentName];
+    }
     
     // Run callback immediately if app was launched due to background-fetch event.
     if (launchedInBackground) {
@@ -96,30 +104,36 @@ static NSString *const TAG = @"TSBackgroundFetch";
 
 -(void) removeListener:(NSString*)componentName
 {
-    if ([listeners objectForKey:componentName]) {
-        NSLog(@"[%@ removeListener]: %@", TAG, componentName);
-        [listeners removeObjectForKey:componentName];
+    @synchronized(listeners) {
+        if ([listeners objectForKey:componentName]) {
+            NSLog(@"[%@ removeListener]: %@", TAG, componentName);
+            [listeners removeObjectForKey:componentName];
+        }
     }
 }
 
-- (BOOL) start
+- (void) start:(void(^)(UIBackgroundRefreshStatus status))callback
 {
-    UIApplication *app = [UIApplication sharedApplication];
-    
-    if (![app respondsToSelector:@selector(setMinimumBackgroundFetchInterval:)]) {
-        NSLog(@"[%@ start] background fetch unsupported for this version of iOS", TAG);
-        return NO;
-    }
-    
-    [app setMinimumBackgroundFetchInterval:minimumFetchInterval];
+    [self status:^(UIBackgroundRefreshStatus status) {
+        if (status == UIBackgroundRefreshStatusAvailable) { [self start]; }
+        callback(status);
+    }];
+}
+
+- (void) start
+{
     NSLog(@"[%@ start]", TAG);
-    return YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:minimumFetchInterval];
+    });
 }
 
 - (void) stop
 {
-    UIApplication *app = [UIApplication sharedApplication];
-    [app setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalNever];
+    NSLog(@"[%@ stop]", TAG);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalNever];
+    });
 }
 
 - (void) performFetchWithCompletionHandler:(void (^)(UIBackgroundFetchResult))handler applicationState:(UIApplicationState)state
@@ -133,26 +147,27 @@ static NSString *const TAG = @"TSBackgroundFetch";
     @synchronized (responses) {
         [responses removeAllObjects];
     }
-    
-    if ([listeners count] > 0) {
-        completionHandler = handler;
-        for (NSString* componentName in listeners) {
-            void (^callback)() = [listeners objectForKey:componentName];
-            callback();
-        }
-    } else if (launchedInBackground) {
-        if (!_configured) {
-            NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
-            NSDictionary *config = [userDefaults objectForKey:TAG];
-            if (config != nil) {
-                [self applyConfig:config];
+    @synchronized(listeners) {
+        if ([listeners count] > 0) {
+            completionHandler = handler;
+            for (NSString* componentName in listeners) {
+                void (^callback)() = [listeners objectForKey:componentName];
+                callback();
             }
+        } else if (launchedInBackground) {
+            if (!_configured) {
+                NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
+                NSDictionary *config = [userDefaults objectForKey:TAG];
+                if (config != nil) {
+                    [self applyConfig:config];
+                }
+            }
+            // Wait for handlers to arrive
+            completionHandler = handler;
+        } else {
+            // No handlers?
+            handler(UIBackgroundFetchResultNoData);
         }
-        // Wait for handlers to arrive
-        completionHandler = handler;
-    } else {
-        // No handlers?
-        handler(UIBackgroundFetchResultNoData);
     }
 }
 
