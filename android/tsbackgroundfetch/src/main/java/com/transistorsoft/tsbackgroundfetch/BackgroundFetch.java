@@ -82,7 +82,7 @@ public class BackgroundFetch {
             long fetchInterval = mConfig.getMinimumFetchInterval() * 60L * 1000L;
             JobScheduler jobScheduler = (JobScheduler) mContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             JobInfo.Builder builder = new JobInfo.Builder(FETCH_JOB_ID, new ComponentName(mContext, FetchJobService.class))
-                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_NONE)
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                     .setRequiresDeviceIdle(false)
                     .setRequiresCharging(false)
                     .setPersisted(mConfig.getStartOnBoot() && !mConfig.getStopOnTerminate());
@@ -174,7 +174,7 @@ public class BackgroundFetch {
                 JobScheduler jobScheduler = (JobScheduler) mContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
                 try {
                     JobInfo.Builder builder = new JobInfo.Builder((FETCH_JOB_ID - 1), new ComponentName(mContext, Class.forName(mConfig.getJobService())))
-                            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_NONE)
+                            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
                             .setRequiresDeviceIdle(false)
                             .setRequiresCharging(false)
                             .setOverrideDeadline(0L)
