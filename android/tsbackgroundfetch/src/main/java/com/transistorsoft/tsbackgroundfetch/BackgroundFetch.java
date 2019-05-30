@@ -60,7 +60,7 @@ public class BackgroundFetch {
     }
 
     public void configure(BackgroundFetchConfig config, BackgroundFetch.Callback callback) {
-        Log.d(TAG, "- configure: " + config);
+        Log.d(TAG, "- " + ACTION_CONFIGURE + ": " + config);
         mCallback = callback;
         config.save(mContext);
         mConfig = config;
@@ -76,20 +76,24 @@ public class BackgroundFetch {
 
     @TargetApi(21)
     public void start() {
-        Log.d(TAG, "- start");
+        Log.d(TAG, "- " + ACTION_START);
         if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
             // API 21+ uses new JobScheduler API
             long fetchInterval = mConfig.getMinimumFetchInterval() * 60L * 1000L;
             JobScheduler jobScheduler = (JobScheduler) mContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             JobInfo.Builder builder = new JobInfo.Builder(FETCH_JOB_ID, new ComponentName(mContext, FetchJobService.class))
-                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_NONE)
-                    .setRequiresDeviceIdle(false)
-                    .setRequiresCharging(false)
+                    .setRequiredNetworkType(mConfig.getRequiredNetworkType())
+                    .setRequiresDeviceIdle(mConfig.getRequiresDeviceIdle())
+                    .setRequiresCharging(mConfig.getRequiresCharging())
                     .setPersisted(mConfig.getStartOnBoot() && !mConfig.getStopOnTerminate());
             if (android.os.Build.VERSION.SDK_INT >= 24) {
                 builder.setPeriodic(fetchInterval, TimeUnit.MINUTES.toMillis(5));
             } else {
                 builder.setPeriodic(fetchInterval);
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                builder.setRequiresStorageNotLow(mConfig.getRequiresStorageNotLow());
+                builder.setRequiresBatteryNotLow(mConfig.getRequiresBatteryNotLow());
             }
             if (jobScheduler != null) {
                 jobScheduler.schedule(builder.build());
@@ -108,7 +112,7 @@ public class BackgroundFetch {
     }
 
     public void stop() {
-        Log.d(TAG,"- stop");
+        Log.d(TAG,"- " + ACTION_STOP);
 
         if (mCompletionHandler != null) {
             mCompletionHandler.finish();
@@ -127,7 +131,7 @@ public class BackgroundFetch {
     }
 
     public void finish() {
-        Log.d(TAG, "- finish");
+        Log.d(TAG, "- " + ACTION_FINISH);
         if (mCompletionHandler != null) {
             mCompletionHandler.finish();
             mCompletionHandler = null;
