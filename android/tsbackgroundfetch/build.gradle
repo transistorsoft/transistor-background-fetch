@@ -3,12 +3,12 @@ apply plugin: 'maven'
 apply plugin: 'maven-publish'
 
 android {
-    compileSdkVersion 26
+    compileSdkVersion 28
 
 
     defaultConfig {
         minSdkVersion 16
-        targetSdkVersion 26
+        targetSdkVersion 28
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
@@ -41,16 +41,18 @@ android {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
-    implementation 'com.android.support:appcompat-v7:26.1.0'
+    implementation 'com.android.support:appcompat-v7:28.0.0'
     testImplementation 'junit:junit:4.12'
-    androidTestImplementation 'com.android.support.test:runner:1.0.1'
-    androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.1'
+    androidTestImplementation 'com.android.support.test:runner:1.0.2'
+    androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
 }
 
 // Build Release
 task buildRelease { task ->
     task.dependsOn 'cordovaRelease'
     task.dependsOn 'reactNativeRelease'
+    task.dependsOn 'nativeScriptRelease'
+    task.dependsOn 'flutterRelease'
 }
 
 // Publish Release.
@@ -101,9 +103,21 @@ task reactNativeRelease { task ->
     }
 }
 
+def flutterDir = "/Users/chris/workspace/background-geolocation/flutter/flutter_background_fetch"
+task flutterRelease { task ->
+    task.dependsOn 'buildLocalRepository'
+    doLast {
+        delete "$flutterDir/android/libs"
+        copy {
+            from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            into("$flutterDir/android/libs")
+            rename(/(.*)-release/, '$1-' + VERSION_NAME)
+        }
+    }
+}
 
 task nativeScriptRelease(type: Copy) {
     from('./build/outputs/aar/tsbackgroundfetch-release.aar')
-    into('/Users/chris/workspace/NativeScript/background-geolocation/nativescript-background-fetch/platforms/android')
+    into('/Users/chris/workspace/NativeScript/background-geolocation/nativescript-background-fetch/src/platforms/android/libs')
     rename('tsbackgroundfetch-release.aar', 'tsbackgroundfetch.aar')
 }
