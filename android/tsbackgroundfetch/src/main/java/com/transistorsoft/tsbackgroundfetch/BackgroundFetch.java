@@ -229,7 +229,7 @@ public class BackgroundFetch {
     public Boolean isMainActivityActive() {
         Boolean isActive = false;
 
-        if (mContext == null) {
+        if (mContext == null || mCallback == null) {
             return false;
         }
         ActivityManager activityManager = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
