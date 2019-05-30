@@ -77,7 +77,8 @@ public class BackgroundFetch {
     @TargetApi(21)
     public void start() {
         Log.d(TAG, "- " + ACTION_START);
-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+
+        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             // API 21+ uses new JobScheduler API
             long fetchInterval = mConfig.getMinimumFetchInterval() * 60L * 1000L;
             JobScheduler jobScheduler = (JobScheduler) mContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
@@ -117,7 +118,7 @@ public class BackgroundFetch {
         if (mCompletionHandler != null) {
             mCompletionHandler.finish();
         }
-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             JobScheduler jobScheduler = (JobScheduler) mContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             if (jobScheduler != null) {
                 jobScheduler.cancel(FETCH_JOB_ID);
@@ -173,7 +174,7 @@ public class BackgroundFetch {
         } else if (mConfig.getJobService() != null) {
             finish();
             // Fire a headless background-fetch event.
-            if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+            if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 // API 21+ uses JobScheduler API to fire a Job to application's configured jobService class.
                 JobScheduler jobScheduler = (JobScheduler) mContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
                 try {
