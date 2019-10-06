@@ -84,9 +84,16 @@ task cordovaRelease { task ->
     task.dependsOn 'buildLocalRepository'
     doLast {
         delete "$cordovaDir/src/android/libs"
+        /*
         copy {
             from("$buildDir/repo-local")
             into("$cordovaDir/src/android/libs")
+        }
+        */
+        copy {
+            from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            into("$cordovaDir/src/android/libs/tsbackgroundfetch")
+            rename(/(.*)-release/, '$1-' + VERSION_NAME)
         }
     }
 }
@@ -97,8 +104,9 @@ task reactNativeRelease { task ->
     doLast {
         delete "$reactNativeDir/android/libs"
         copy {
-            from("$buildDir/repo-local")
+            from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
             into("$reactNativeDir/android/libs")
+            rename(/(.*)-release/, '$1-' + VERSION_NAME)
         }
     }
 }

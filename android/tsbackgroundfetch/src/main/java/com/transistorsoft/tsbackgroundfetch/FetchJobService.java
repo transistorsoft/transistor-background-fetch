@@ -19,6 +19,7 @@ public class FetchJobService extends JobService {
                 jobFinished(params, false);
             }
         };
+
         BackgroundFetch.getInstance(getApplicationContext()).onFetch(completionHandler);
 
         return true;

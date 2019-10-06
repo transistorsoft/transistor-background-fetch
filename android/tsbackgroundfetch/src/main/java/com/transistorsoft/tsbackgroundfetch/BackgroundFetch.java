@@ -11,10 +11,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import java.util.Calendar;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -37,6 +41,24 @@ public class BackgroundFetch {
 
     private static BackgroundFetch mInstance = null;
     private static int FETCH_JOB_ID = 999;
+
+    private static ExecutorService sThreadPool;
+
+    private static Handler uiHandler;
+
+    public static Handler getUiHandler() {
+        if (uiHandler == null) {
+            uiHandler = new Handler(Looper.getMainLooper());
+        }
+        return uiHandler;
+    }
+
+    public static ExecutorService getThreadPool() {
+        if (sThreadPool == null) {
+            sThreadPool = Executors.newCachedThreadPool();
+        }
+        return sThreadPool;
+    }
 
     public static BackgroundFetch getInstance(Context context) {
         if (mInstance == null) {
@@ -159,8 +181,20 @@ public class BackgroundFetch {
     public void onFetch() {
         Log.d(TAG, "- Background Fetch event received");
         if (mConfig == null) {
-            mConfig = new BackgroundFetchConfig.Builder().load(mContext);
+            getThreadPool().execute(new Runnable() {
+                @Override public void run() {
+                    mConfig = new BackgroundFetchConfig.Builder().load(mContext);
+                    getUiHandler().post(new Runnable() {
+                        @Override public void run() { doFetch(); }
+                    });
+                }
+            });
+        } else {
+            doFetch();
         }
+    }
+
+    private void doFetch() {
         if (isMainActivityActive()) {
             if (mCallback != null) {
                 mCallback.onFetch();
@@ -209,7 +243,6 @@ public class BackgroundFetch {
             stop();
         }
     }
-
     public void forceMainActivityReload() {
         Log.i(TAG,"- Forcing MainActivity reload");
         PackageManager pm = mContext.getPackageManager();
