@@ -3,6 +3,7 @@ package com.transistorsoft.tsbackgroundfetch;
 import android.annotation.TargetApi;
 import android.app.job.JobParameters;
 import android.app.job.JobService;
+import android.os.PersistableBundle;
 import android.util.Log;
 
 /**
@@ -12,6 +13,9 @@ import android.util.Log;
 public class FetchJobService extends JobService {
     @Override
     public boolean onStartJob(final JobParameters params) {
+        PersistableBundle extras = params.getExtras();
+        final String taskId = extras.getString(BackgroundFetchConfig.FIELD_TASK_ID);
+
         CompletionHandler completionHandler = new CompletionHandler() {
             @Override
             public void finish() {
@@ -20,7 +24,8 @@ public class FetchJobService extends JobService {
             }
         };
 
-        BackgroundFetch.getInstance(getApplicationContext()).onFetch(completionHandler);
+        BGTask task = new BGTask(taskId, completionHandler);
+        BackgroundFetch.getInstance(getApplicationContext()).onFetch(task);
 
         return true;
     }

@@ -62,6 +62,8 @@ task publishRelease { task ->
 tasks["publishRelease"].mustRunAfter("assembleRelease")
 tasks["publishRelease"].finalizedBy("publish")
 
+def WORKSPACE_PATH = "/Volumes/Glyph2TB/Users/chris/workspace"
+
 // Build local maven repo.
 def LIBRARY_PATH = "com/transistorsoft/tsbackgroundfetch"
 task buildLocalRepository { task ->
@@ -79,17 +81,11 @@ task buildLocalRepository { task ->
     }
 }
 
-def cordovaDir = "/Users/chris/workspace/cordova/background-geolocation/cordova-plugin-background-fetch"
+def cordovaDir = "$WORKSPACE_PATH/cordova/background-geolocation/cordova-plugin-background-fetch"
 task cordovaRelease { task ->
     task.dependsOn 'buildLocalRepository'
     doLast {
         delete "$cordovaDir/src/android/libs"
-        /*
-        copy {
-            from("$buildDir/repo-local")
-            into("$cordovaDir/src/android/libs")
-        }
-        */
         copy {
             from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
             into("$cordovaDir/src/android/libs/tsbackgroundfetch")
@@ -98,7 +94,7 @@ task cordovaRelease { task ->
     }
 }
 
-def reactNativeDir = "/Users/chris/workspace/react/background-geolocation/react-native-background-fetch"
+def reactNativeDir = "$WORKSPACE_PATH/react/background-geolocation/react-native-background-fetch"
 task reactNativeRelease { task ->
     task.dependsOn 'buildLocalRepository'
     doLast {
@@ -111,7 +107,7 @@ task reactNativeRelease { task ->
     }
 }
 
-def flutterDir = "/Users/chris/workspace/background-geolocation/flutter/flutter_background_fetch"
+def flutterDir = "$WORKSPACE_PATH/background-geolocation/flutter/flutter_background_fetch"
 task flutterRelease { task ->
     task.dependsOn 'buildLocalRepository'
     doLast {
@@ -126,6 +122,6 @@ task flutterRelease { task ->
 
 task nativeScriptRelease(type: Copy) {
     from('./build/outputs/aar/tsbackgroundfetch-release.aar')
-    into('/Users/chris/workspace/NativeScript/background-geolocation/nativescript-background-fetch/src/platforms/android/libs')
+    into('$WORKSPACE_PATH/NativeScript/background-geolocation/nativescript-background-fetch/src/platforms/android/libs')
     rename('tsbackgroundfetch-release.aar', 'tsbackgroundfetch.aar')
 }
