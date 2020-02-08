@@ -21,8 +21,8 @@ import java.util.Set;
 public class BackgroundFetchConfig {
     private Builder config;
 
-    private static final int MINIMUM_FETCH_INTERVAL = 15;
-    static final String FETCH_TASK_ID = "com.transistorsoft.fetch";
+    private static final int MINIMUM_FETCH_INTERVAL = 1;
+    private static final int DEFAULT_FETCH_INTERVAL = 15;
 
     public static final String FIELD_TASK_ID = "taskId";
     public static final String FIELD_MINIMUM_FETCH_INTERVAL = "minimumFetchInterval";
@@ -37,10 +37,11 @@ public class BackgroundFetchConfig {
     public static final String FIELD_FORCE_ALARM_MANAGER = "forceAlarmManager";
     public static final String FIELD_PERIODIC = "periodic";
     public static final String FIELD_DELAY = "delay";
+    public static final String FIELD_IS_FETCH_TASK = "isFetchTask";
 
     public static class Builder {
-        private String taskId               = FETCH_TASK_ID;
-        private int minimumFetchInterval           = MINIMUM_FETCH_INTERVAL;
+        private String taskId;
+        private int minimumFetchInterval           = DEFAULT_FETCH_INTERVAL;
         private long delay                  = -1;
         private boolean periodic            = false;
         private boolean forceAlarmManager   = false;
@@ -51,6 +52,7 @@ public class BackgroundFetchConfig {
         private boolean requiresCharging    = false;
         private boolean requiresDeviceIdle  = false;
         private boolean requiresStorageNotLow = false;
+        private boolean isFetchTask         = false;
 
         private String jobService           = null;
 
@@ -58,6 +60,12 @@ public class BackgroundFetchConfig {
             this.taskId = taskId;
             return this;
         }
+
+        public Builder setIsFetchTask(boolean value) {
+            this.isFetchTask = value;
+            return this;
+        }
+
         public Builder setMinimumFetchInterval(int fetchInterval) {
             if (fetchInterval >= MINIMUM_FETCH_INTERVAL) {
                 this.minimumFetchInterval = fetchInterval;
@@ -142,6 +150,9 @@ public class BackgroundFetchConfig {
             if (preferences.contains(FIELD_TASK_ID)) {
                 setTaskId(preferences.getString(FIELD_TASK_ID, taskId));
             }
+            if (preferences.contains(FIELD_IS_FETCH_TASK)) {
+                setIsFetchTask(preferences.getBoolean(FIELD_IS_FETCH_TASK, isFetchTask));
+            }
             if (preferences.contains(FIELD_MINIMUM_FETCH_INTERVAL)) {
                 setMinimumFetchInterval(preferences.getInt(FIELD_MINIMUM_FETCH_INTERVAL, minimumFetchInterval));
             }
@@ -218,6 +229,7 @@ public class BackgroundFetchConfig {
         SharedPreferences.Editor editor = context.getSharedPreferences(BackgroundFetch.TAG + ":" + config.taskId, 0).edit();
 
         editor.putString(FIELD_TASK_ID, config.taskId);
+        editor.putBoolean(FIELD_IS_FETCH_TASK, config.isFetchTask);
         editor.putInt(FIELD_MINIMUM_FETCH_INTERVAL, config.minimumFetchInterval);
         editor.putBoolean(FIELD_STOP_ON_TERMINATE, config.stopOnTerminate);
         editor.putBoolean(FIELD_START_ON_BOOT, config.startOnBoot);
@@ -230,6 +242,7 @@ public class BackgroundFetchConfig {
         editor.putBoolean(FIELD_FORCE_ALARM_MANAGER, config.forceAlarmManager);
         editor.putBoolean(FIELD_PERIODIC, config.periodic);
         editor.putLong(FIELD_DELAY, config.delay);
+
         editor.apply();
     }
 
@@ -246,7 +259,7 @@ public class BackgroundFetchConfig {
             editor.putStringSet("tasks", newIds);
             editor.apply();
         }
-        if (config.taskId != FETCH_TASK_ID) {
+        if (!config.isFetchTask) {
             SharedPreferences.Editor editor = context.getSharedPreferences(BackgroundFetch.TAG + ":" + config.taskId, 0).edit();
             editor.clear();
             editor.apply();
@@ -256,7 +269,7 @@ public class BackgroundFetchConfig {
     static int FETCH_JOB_ID = 999;
 
     boolean isFetchTask() {
-        return getTaskId().equalsIgnoreCase(FETCH_TASK_ID);
+        return config.isFetchTask;
     }
 
     public String getTaskId() { return config.taskId; }
@@ -298,6 +311,7 @@ public class BackgroundFetchConfig {
         JSONObject output = new JSONObject();
         try {
             output.put(FIELD_TASK_ID, config.taskId);
+            output.put(FIELD_IS_FETCH_TASK, config.isFetchTask);
             output.put(FIELD_MINIMUM_FETCH_INTERVAL, config.minimumFetchInterval);
             output.put(FIELD_STOP_ON_TERMINATE, config.stopOnTerminate);
             output.put(FIELD_REQUIRED_NETWORK_TYPE, config.requiredNetworkType);

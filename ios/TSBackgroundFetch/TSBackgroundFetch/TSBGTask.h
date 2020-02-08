@@ -15,11 +15,12 @@
 @property (nonatomic) BGTask* task API_AVAILABLE(ios(13.0));
 
 @property (nonatomic) NSString* identifier;
-@property (copy) void (^callback) (NSString*);
+@property (copy) void (^callback)(NSString*);
 @property (nonatomic) NSTimeInterval delay;
 @property (nonatomic, readonly) BOOL executed;
 @property (nonatomic) BOOL periodic;
 @property (nonatomic) BOOL enabled;
+@property (nonatomic, readonly) BOOL finished;
 @property (nonatomic) BOOL stopOnTerminate; 
 
 +(void)load;
@@ -27,9 +28,8 @@
 +(void) add:(TSBGTask*)tsTask;
 +(void) remove:(TSBGTask*)tsTask;
 +(TSBGTask*) get:(NSString*)identifier;
-+(int) countFetch;
-+(void)registerForTaskWithIdentifier:(NSString*)identifier isFetch:(BOOL)isFetch;
-+(BOOL)useFetchTaskScheduler;
+
++(void)registerForTaskWithIdentifier:(NSString*)identifier;
 +(BOOL)useProcessingTaskScheduler;
 
 -(instancetype) initWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic callback:(void (^)(NSString* taskId))callback;
@@ -37,11 +37,10 @@
 
 -(BOOL) execute;
 -(void) finish:(BOOL)success;
--(NSError*) scheduleFetchTask;
--(NSError*) scheduleProcessingTask;
+
+-(NSError*) schedule;
 -(void) stop;
--(void) setTask:(BGTask*)task API_AVAILABLE(ios(13));
--(BOOL) isFetchTask;
+-(void) setTask:(BGProcessingTask*)task API_AVAILABLE(ios(13));
 -(void) destroy;
 -(void) save;
 

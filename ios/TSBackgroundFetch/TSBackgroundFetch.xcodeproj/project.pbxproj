@@ -21,6 +21,8 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		8346550523EDB7FF001DEE2A /* TSBGAppRefreshSubscriber.m in Sources */ = {isa = PBXBuildFile; fileRef = 8346550423EDB7FF001DEE2A /* TSBGAppRefreshSubscriber.m */; };
+		8346550723EDB814001DEE2A /* TSBGAppRefreshSubscriber.h in Headers */ = {isa = PBXBuildFile; fileRef = 8346550623EDB814001DEE2A /* TSBGAppRefreshSubscriber.h */; };
 		835318301D5220A3005738CD /* TSBackgroundFetch.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 835318251D5220A3005738CD /* TSBackgroundFetch.framework */; };
 		835318351D5220A3005738CD /* TSBackgroundFetchTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 835318341D5220A3005738CD /* TSBackgroundFetchTests.m */; };
 		835318411D5220F6005738CD /* TSBackgroundFetch.h in Headers */ = {isa = PBXBuildFile; fileRef = 8353183F1D5220F6005738CD /* TSBackgroundFetch.h */; settings = {ATTRIBUTES = (Public, ); }; };
@@ -41,6 +43,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		8346550423EDB7FF001DEE2A /* TSBGAppRefreshSubscriber.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TSBGAppRefreshSubscriber.m; sourceTree = "<group>"; };
+		8346550623EDB814001DEE2A /* TSBGAppRefreshSubscriber.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TSBGAppRefreshSubscriber.h; sourceTree = "<group>"; };
 		835318251D5220A3005738CD /* TSBackgroundFetch.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TSBackgroundFetch.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		8353182A1D5220A3005738CD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8353182F1D5220A3005738CD /* TSBackgroundFetchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TSBackgroundFetchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -102,6 +106,8 @@
 				8353182A1D5220A3005738CD /* Info.plist */,
 				83D531E023D9E2030079D172 /* TSBGTask.h */,
 				83D531E223D9E2140079D172 /* TSBGTask.m */,
+				8346550423EDB7FF001DEE2A /* TSBGAppRefreshSubscriber.m */,
+				8346550623EDB814001DEE2A /* TSBGAppRefreshSubscriber.h */,
 			);
 			path = TSBackgroundFetch;
 			sourceTree = "<group>";
@@ -131,6 +137,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				835318411D5220F6005738CD /* TSBackgroundFetch.h in Headers */,
+				8346550723EDB814001DEE2A /* TSBGAppRefreshSubscriber.h in Headers */,
 				83D531E123D9E2030079D172 /* TSBGTask.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -255,6 +262,7 @@
 			files = (
 				83D531E323D9E2140079D172 /* TSBGTask.m in Sources */,
 				835318421D5220F6005738CD /* TSBackgroundFetch.m in Sources */,
+				8346550523EDB7FF001DEE2A /* TSBGAppRefreshSubscriber.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

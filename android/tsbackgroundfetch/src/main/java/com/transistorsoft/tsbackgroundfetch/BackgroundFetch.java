@@ -85,7 +85,7 @@ public class BackgroundFetch {
         synchronized (mConfig) {
             mConfig.put(config.getTaskId(), config);
         }
-        start();
+        start(config.getTaskId());
     }
 
     void onBoot() {
@@ -100,7 +100,7 @@ public class BackgroundFetch {
                         mConfig.put(config.getTaskId(), config);
                     }
                     if (config.isFetchTask()) {
-                        start();
+                        start(config.getTaskId());
                     } else {
                         scheduleTask(config);
                     }
@@ -111,24 +111,30 @@ public class BackgroundFetch {
 
     @SuppressWarnings({"WeakerAccess"})
     @TargetApi(21)
-    public void start() {
+    public void start(String fetchTaskId) {
         Log.d(TAG, "- " + ACTION_START);
 
-        BGTask task = BGTask.getTask(BackgroundFetchConfig.FETCH_TASK_ID);
+        BGTask task = BGTask.getTask(fetchTaskId);
         if (task != null) {
-            Log.e(TAG, "[" + TAG + " start] Task " + BackgroundFetchConfig.FETCH_TASK_ID + " already registered");
+            Log.e(TAG, "[" + TAG + " start] Task " + fetchTaskId + " already registered");
             return;
         }
-        registerTask(BackgroundFetchConfig.FETCH_TASK_ID);
+        registerTask(fetchTaskId);
     }
 
     @SuppressWarnings({"WeakerAccess"})
     public void stop(@Nullable String taskId) {
-        Log.d(TAG,"- " + ACTION_STOP);
+        String msg = "- " + ACTION_STOP;
+        if (taskId != null) {
+            msg += ": " + taskId;
+        }
+        Log.d(TAG, msg);
 
         if (taskId == null) {
             synchronized (mConfig) {
+
                 for (BackgroundFetchConfig config : mConfig.values()) {
+
                     BGTask task = BGTask.getTask(config.getTaskId());
                     if (task != null) {
                         task.finish();
@@ -145,7 +151,7 @@ public class BackgroundFetch {
                 task.finish();
                 BGTask.removeTask(task.getTaskId());
             }
-            BackgroundFetchConfig config = getConfig(BackgroundFetchConfig.FETCH_TASK_ID);
+            BackgroundFetchConfig config = getConfig(taskId);
             if (config != null) {
                 config.destroy(mContext);
                 BGTask.cancel(mContext, config);
@@ -167,10 +173,7 @@ public class BackgroundFetch {
     }
 
     @SuppressWarnings({"WeakerAccess"})
-    public void finish(@Nullable String taskId) {
-        if (taskId == null) {
-            taskId = BackgroundFetchConfig.FETCH_TASK_ID;
-        }
+    public void finish(String taskId) {
         Log.d(TAG, "- " + ACTION_FINISH + ": " + taskId);
         BGTask task = BGTask.getTask(taskId);
         if (task != null) {
@@ -273,7 +276,7 @@ public class BackgroundFetch {
         }
     }
 
-    @SuppressWarnings({"WeakerAccess"})
+    @SuppressWarnings({"WeakerAccess", "deprecation"})
     public Boolean isMainActivityActive() {
         Boolean isActive = false;
 

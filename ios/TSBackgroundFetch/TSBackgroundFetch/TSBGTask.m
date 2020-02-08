@@ -13,7 +13,6 @@
 static NSString *const TAG = @"TSBackgroundFetch";
 static NSString *const TASKS_STORAGE_KEY = @"TSBackgroundFetch:tasks";
 
-static BOOL _hasRegisteredFetchTaskScheduler        = NO;
 static BOOL _hasRegisteredProcessingTaskScheduler   = NO;
 
 static NSString *const ERROR_PROCESSING_TASK_NOT_REGISTERED = @"Background procssing task was not registered in AppDelegate didFinishLaunchingWithOptions.  See iOS Setup Guide.";
@@ -22,42 +21,25 @@ static NSString *const ERROR_PROCESSING_TASK_NOT_AVAILABLE = @"Background procss
 static NSMutableArray *_tasks;
 
 @implementation TSBGTask {
-    BOOL isFetchTask;
     BOOL scheduled;
 }
 
 #pragma mark Class Methods
 
-+(void)registerForTaskWithIdentifier:(NSString*)identifier isFetch:(BOOL)isFetch API_AVAILABLE(ios(13)) {
-    if (isFetch) {
-        _hasRegisteredFetchTaskScheduler = YES;
-    } else {
-        _hasRegisteredProcessingTaskScheduler = YES;
-    }
-    
-    __block NSString *type = (isFetch) ? @"Fetch" : @"Processing";
-    NSLog(@"[%@ registerBackground%@Task: %@", TAG, type, identifier);
++(void)registerForTaskWithIdentifier:(NSString*)identifier API_AVAILABLE(ios(13)) {
+    _hasRegisteredProcessingTaskScheduler = YES;
+        
+    NSLog(@"[%@ registerForTaskWithIdentifier: %@", TAG, identifier);
     
     [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:identifier usingQueue:nil launchHandler:^(BGTask* task) {
         TSBGTask *tsTask = [self get:task.identifier];
         if (!tsTask) {
-            NSLog(@"[%@ registerBackground%@Task] ERROR:  Failed to find TSBGTask in Fetch event: %@", type, TAG, task.identifier);
+            NSLog(@"[%@ registerForTaskWithIdentifier launchHandler] ERROR:  Failed to find TSBGTask in Fetch event: %@", TAG, task.identifier);
             [task setTaskCompletedWithSuccess:NO];
             return;
         }
-        [tsTask setTask:task];
+        [tsTask setTask:(BGProcessingTask*)task];
     }];
-}
-
-+(void)registerFetchTaskScheduler {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        _hasRegisteredFetchTaskScheduler = YES;
-    });
-}
-
-+(BOOL)useFetchTaskScheduler {
-    return _hasRegisteredFetchTaskScheduler;
 }
 
 +(BOOL)useProcessingTaskScheduler {
@@ -66,17 +48,6 @@ static NSMutableArray *_tasks;
 
 +(void)load {
     [[self class] tasks];
-}
-
-+(int) countFetch {
-    NSArray *tasks = [[self class] tasks];
-    int count = 0;
-    @synchronized (tasks) {
-        for (TSBGTask *tsTask in tasks) {
-            if (tsTask.isFetchTask && tsTask.enabled) count++;
-        }
-    }
-    return count;
 }
 
 + (NSMutableArray*)tasks
@@ -96,37 +67,31 @@ static NSMutableArray *_tasks;
         }
         NSLog(@"[%@ load]: %@", TAG, _tasks);
     });
-    return _tasks;
+    @synchronized (_tasks) {
+        return [_tasks copy];
+    }
 }
 
-
-
 + (TSBGTask*) get:(NSString*)identifier {
-    NSMutableArray *tasks = [[self class] tasks];
-    TSBGTask *found = nil;
-    @synchronized (tasks) {
-        for (TSBGTask *tsTask in tasks) {
+    @synchronized (_tasks) {
+        for (TSBGTask *tsTask in _tasks) {
             if ([tsTask.identifier isEqualToString:identifier]) {
-                found = tsTask;
-                break;
+                return tsTask;
             }
         }
     }
-    return found;
+    return nil;
 }
 
 + (void) add:(TSBGTask*)tsTask {
-    NSMutableArray *tasks = [[self class] tasks];
-    @synchronized (tasks) {
-        [tasks addObject:tsTask];
+    @synchronized (_tasks) {
+        [_tasks addObject:tsTask];
     }
 }
 
 + (void) remove:(TSBGTask*)tsTask {
-    NSMutableArray *tasks = [[self class] tasks];
-    if (!tasks) return;
-    @synchronized (tasks) {
-        [tasks removeObject:tsTask];
+    @synchronized (_tasks) {
+        [_tasks removeObject:tsTask];
     }
 }
 
@@ -134,11 +99,11 @@ static NSMutableArray *_tasks;
 
 -(instancetype)init {
     self = [super init];
-    isFetchTask = YES;
     scheduled = NO;
     
     _enabled = NO;
     _executed = NO;
+    _finished = NO;
     
     return self;
 }
@@ -162,57 +127,18 @@ static NSMutableArray *_tasks;
         _delay = [[config objectForKey:@"delay"] longValue];
         _periodic = [[config objectForKey:@"periodic"] boolValue];
         _enabled = [[config objectForKey:@"enabled"] boolValue];
-        isFetchTask = [[config objectForKey:@"isFetchTask"] boolValue];
     }
     return self;
 }
 
-- (NSError*) scheduleFetchTask {
-    if (scheduled) return nil;
-    
-    NSLog(@"[%@ scheduleFetchTask] %@, %d", TAG, self, [TSBGTask useFetchTaskScheduler]);
-    
-    isFetchTask = YES;
-    
-    NSError *error = nil;
-    
-    if (@available (iOS 13.0, *)) {
-        if ([TSBGTask useFetchTaskScheduler]) {
-            BGTaskScheduler *scheduler = [BGTaskScheduler sharedScheduler];
-            BGAppRefreshTaskRequest *request = [[BGAppRefreshTaskRequest alloc] initWithIdentifier:_identifier];
-            request.earliestBeginDate = [NSDate dateWithTimeIntervalSinceNow:_delay];
-            [scheduler submitTaskRequest:request error:&error];
-        } else {
-            [self setMinimumFetchInterval];
-        }
-    } else {
-        [self setMinimumFetchInterval];
-    }
-    if (!error) {
-        scheduled = YES;
-        if (!_enabled) {
-            _enabled = YES;
-            [self save];
-        }
-    }
-    return error;
-}
-
--(void) setMinimumFetchInterval {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:_delay];
-    });
-}
-- (NSError*) scheduleProcessingTask {
+- (NSError*) schedule {
     if (@available (iOS 13.0, *)) {
         if (![TSBGTask useProcessingTaskScheduler]) {
             return [[NSError alloc] initWithDomain:TAG code:0 userInfo:@{NSLocalizedFailureReasonErrorKey:ERROR_PROCESSING_TASK_NOT_REGISTERED}];
         }
         
         NSLog(@"[%@ scheduleProcessingTask] %@", TAG, self);
-        
-        isFetchTask = NO;
-        
+    
         BGTaskScheduler *scheduler = [BGTaskScheduler sharedScheduler];
         
         if (scheduled) {
@@ -220,6 +146,9 @@ static NSMutableArray *_tasks;
         }
         
         BGProcessingTaskRequest *request = [[BGProcessingTaskRequest alloc] initWithIdentifier:_identifier];
+        // TODO Configurable.
+        request.requiresExternalPower = NO;
+        request.requiresNetworkConnectivity = NO;
         request.earliestBeginDate = [NSDate dateWithTimeIntervalSinceNow:_delay];
         
         NSError *error = nil;
@@ -240,28 +169,18 @@ static NSMutableArray *_tasks;
 - (void) stop {
     _enabled = NO;
     scheduled = NO;
-    
-    if (isFetchTask) {
-        [self save];
-    } else {
-        [self destroy];
-    }
-    
-    if ([TSBGTask useFetchTaskScheduler] || [TSBGTask useProcessingTaskScheduler]) {
-        if (@available(iOS 13.0, *)) {
-            [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:_identifier];
-        }
-    } else if ([TSBGTask countFetch] < 1) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalNever];
-        });
+        
+    [self destroy];
+        
+    if (@available(iOS 13.0, *)) {
+        [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:_identifier];
     }
 }
 
--(void) setTask:(BGTask*)task {
+-(void) setTask:(BGProcessingTask*)task {
     scheduled = NO;
     
-    _task = (isFetchTask) ? (BGAppRefreshTask*) task : (BGProcessingTask*) task;
+    _task = task;
     
     task.expirationHandler = ^{
         NSLog(@"[%@ expirationHandler] WARNING: %@ '%@' expired before #finish was executed.", TAG, NSStringFromClass([_task class]), _identifier);
@@ -276,15 +195,11 @@ static NSMutableArray *_tasks;
 
 - (BOOL) execute {
     if (@available(iOS 13.0, *)) {
-        if (_periodic && !scheduled) {
-            if (isFetchTask && [TSBGTask useFetchTaskScheduler]) {
-                [self scheduleFetchTask];
-            } else if ([TSBGTask useProcessingTaskScheduler]){
-                [self scheduleProcessingTask];
-            }
+        if ([TSBGTask useProcessingTaskScheduler] && _periodic && !scheduled) {
+            [self schedule];
         }
     }
-    
+    _finished = NO;
     if (_callback) {
         _callback(_identifier);
         _executed = YES;
@@ -296,8 +211,9 @@ static NSMutableArray *_tasks;
 
 -(void) finish:(BOOL)success {
     [_task setTaskCompletedWithSuccess:success];
-    _task = nil;
+    _finished = YES;
     _executed = NO;
+    _task = nil;
     if (!_periodic) {
         [self destroy];
     }
@@ -309,7 +225,6 @@ static NSMutableArray *_tasks;
     if (!taskIds) {
         taskIds = [NSMutableArray new];
     }
-        
     if (![taskIds containsObject:_identifier]) {
         [taskIds addObject:_identifier];
         [defaults setObject:taskIds forKey:TASKS_STORAGE_KEY];
@@ -338,16 +253,11 @@ static NSMutableArray *_tasks;
     NSLog(@"[TSBGTask destroy] %@", _identifier);
 }
 
--(BOOL) isFetchTask {
-    return isFetchTask;
-}
-
 -(NSDictionary*) toDictionary {
     return @{
         @"identifier": _identifier,
         @"delay": @(_delay),
         @"periodic": @(_periodic),
-        @"isFetchTask": @(isFetchTask),
         @"enabled": @(_enabled)
     };
 }
@@ -355,4 +265,5 @@ static NSMutableArray *_tasks;
 -(NSString*) description {
     return [NSString stringWithFormat:@"<TSBGTask identifier=%@, delay=%ld, periodic=%d enabled=%d>", _identifier, (long)_delay, _periodic, _enabled];
 }
+
 @end

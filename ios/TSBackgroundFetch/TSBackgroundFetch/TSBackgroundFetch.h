@@ -18,12 +18,14 @@
 
 + (TSBackgroundFetch *)sharedInstance;
 
--(void) registerBackgroundFetchTask:(NSString*)identifier;
--(void) registerBackgroundProcessingTask:(NSString*)identifier;
+-(void) registerAppRefreshTask;
+-(void) registerBGProcessingTask:(NSString*)identifier;
 
--(NSError*) scheduleFetchWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay callback:(void (^)(NSString* taskId))callback;
+-(void) configure:(NSTimeInterval)delay callback:(void(^)(UIBackgroundRefreshStatus status))callback;
+
 -(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic callback:(void (^)(NSString* taskId))callback;
 
+-(void) addListener:(NSString*)componentName callback:(void (^)(NSString* componentName))callback;
 -(void) removeListener:(NSString*)componentName;
 -(BOOL) hasListener:(NSString*)componentName;
 
