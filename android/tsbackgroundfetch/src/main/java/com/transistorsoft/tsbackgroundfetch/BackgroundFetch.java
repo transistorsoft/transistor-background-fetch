@@ -2,24 +2,18 @@ package com.transistorsoft.tsbackgroundfetch;
 
 import android.annotation.TargetApi;
 import android.app.ActivityManager;
-import android.app.AlarmManager;
-import android.app.PendingIntent;
-import android.app.job.JobInfo;
-import android.app.job.JobScheduler;
-import android.content.ComponentName;
+
 import android.content.Context;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.support.annotation.Nullable;
 import android.util.Log;
 
-import java.util.Calendar;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Created by chris on 2018-01-11.
@@ -40,12 +34,12 @@ public class BackgroundFetch {
     public static final int STATUS_AVAILABLE = 2;
 
     private static BackgroundFetch mInstance = null;
-    private static int FETCH_JOB_ID = 999;
 
     private static ExecutorService sThreadPool;
 
     private static Handler uiHandler;
 
+    @SuppressWarnings({"WeakerAccess"})
     public static Handler getUiHandler() {
         if (uiHandler == null) {
             uiHandler = new Handler(Looper.getMainLooper());
@@ -53,6 +47,7 @@ public class BackgroundFetch {
         return uiHandler;
     }
 
+    @SuppressWarnings({"WeakerAccess"})
     public static ExecutorService getThreadPool() {
         if (sThreadPool == null) {
             sThreadPool = Executors.newCachedThreadPool();
@@ -60,6 +55,7 @@ public class BackgroundFetch {
         return sThreadPool;
     }
 
+    @SuppressWarnings({"WeakerAccess"})
     public static BackgroundFetch getInstance(Context context) {
         if (mInstance == null) {
             mInstance = getInstanceSynchronized(context.getApplicationContext());
@@ -74,90 +70,114 @@ public class BackgroundFetch {
 
     private Context mContext;
     private BackgroundFetch.Callback mCallback;
-    private BackgroundFetchConfig mConfig;
-    private FetchJobService.CompletionHandler mCompletionHandler;
+
+    private final Map<String, BackgroundFetchConfig> mConfig = new HashMap<>();
 
     private BackgroundFetch(Context context) {
         mContext = context;
     }
 
+    @SuppressWarnings({"unused"})
     public void configure(BackgroundFetchConfig config, BackgroundFetch.Callback callback) {
-        Log.d(TAG, "- " + ACTION_CONFIGURE + ": " + config);
+        Log.d(TAG, "- " + ACTION_CONFIGURE);
         mCallback = callback;
-        config.save(mContext);
-        mConfig = config;
-        start();
-    }
 
-    public void onBoot() {
-        mConfig = new BackgroundFetchConfig.Builder().load(mContext);
-        if (mConfig.getStartOnBoot() && !mConfig.getStopOnTerminate()) {
-            start();
+        synchronized (mConfig) {
+            mConfig.put(config.getTaskId(), config);
         }
+        start(config.getTaskId());
     }
 
+    void onBoot() {
+        BackgroundFetchConfig.load(mContext, new BackgroundFetchConfig.OnLoadCallback() {
+            @Override public void onLoad(List<BackgroundFetchConfig> result) {
+                for (BackgroundFetchConfig config : result) {
+                    if (!config.getStartOnBoot() || config.getStopOnTerminate()) {
+                        config.destroy(mContext);
+                        continue;
+                    }
+                    synchronized (mConfig) {
+                        mConfig.put(config.getTaskId(), config);
+                    }
+                    if (config.isFetchTask()) {
+                        start(config.getTaskId());
+                    } else {
+                        scheduleTask(config);
+                    }
+                }
+            }
+        });
+    }
+
+    @SuppressWarnings({"WeakerAccess"})
     @TargetApi(21)
-    public void start() {
+    public void start(String fetchTaskId) {
         Log.d(TAG, "- " + ACTION_START);
 
-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            // API 21+ uses new JobScheduler API
-            long fetchInterval = mConfig.getMinimumFetchInterval() * 60L * 1000L;
-            JobScheduler jobScheduler = (JobScheduler) mContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-            JobInfo.Builder builder = new JobInfo.Builder(FETCH_JOB_ID, new ComponentName(mContext, FetchJobService.class))
-                    .setRequiredNetworkType(mConfig.getRequiredNetworkType())
-                    .setRequiresDeviceIdle(mConfig.getRequiresDeviceIdle())
-                    .setRequiresCharging(mConfig.getRequiresCharging())
-                    .setPersisted(mConfig.getStartOnBoot() && !mConfig.getStopOnTerminate());
-            if (android.os.Build.VERSION.SDK_INT >= 24) {
-                builder.setPeriodic(fetchInterval, TimeUnit.MINUTES.toMillis(5));
-            } else {
-                builder.setPeriodic(fetchInterval);
-            }
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
-                builder.setRequiresStorageNotLow(mConfig.getRequiresStorageNotLow());
-                builder.setRequiresBatteryNotLow(mConfig.getRequiresBatteryNotLow());
-            }
-            if (jobScheduler != null) {
-                jobScheduler.schedule(builder.build());
+        BGTask task = BGTask.getTask(fetchTaskId);
+        if (task != null) {
+            Log.e(TAG, "[" + TAG + " start] Task " + fetchTaskId + " already registered");
+            return;
+        }
+        registerTask(fetchTaskId);
+    }
+
+    @SuppressWarnings({"WeakerAccess"})
+    public void stop(@Nullable String taskId) {
+        String msg = "- " + ACTION_STOP;
+        if (taskId != null) {
+            msg += ": " + taskId;
+        }
+        Log.d(TAG, msg);
+
+        if (taskId == null) {
+            synchronized (mConfig) {
+
+                for (BackgroundFetchConfig config : mConfig.values()) {
+
+                    BGTask task = BGTask.getTask(config.getTaskId());
+                    if (task != null) {
+                        task.finish();
+                        BGTask.removeTask(config.getTaskId());
+                    }
+                    BGTask.cancel(mContext, config);
+                    config.destroy(mContext);
+                }
+                BGTask.clear();
             }
         } else {
-            // Everyone else get AlarmManager
-            int fetchInterval = mConfig.getMinimumFetchInterval() * 60 * 1000;
-            AlarmManager alarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
-            Calendar cal = Calendar.getInstance();
-            cal.setTimeInMillis(System.currentTimeMillis());
-            cal.add(Calendar.MINUTE, mConfig.getMinimumFetchInterval());
-            if (alarmManager != null) {
-                alarmManager.setRepeating(AlarmManager.RTC_WAKEUP, cal.getTimeInMillis(), fetchInterval, getAlarmPI());
+            BGTask task = BGTask.getTask(taskId);
+            if (task != null) {
+                task.finish();
+                BGTask.removeTask(task.getTaskId());
+            }
+            BackgroundFetchConfig config = getConfig(taskId);
+            if (config != null) {
+                config.destroy(mContext);
+                BGTask.cancel(mContext, config);
             }
         }
     }
 
-    public void stop() {
-        Log.d(TAG,"- " + ACTION_STOP);
-
-        if (mCompletionHandler != null) {
-            mCompletionHandler.finish();
-        }
-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            JobScheduler jobScheduler = (JobScheduler) mContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-            if (jobScheduler != null) {
-                jobScheduler.cancel(FETCH_JOB_ID);
+    @SuppressWarnings({"WeakerAccess"})
+    public void scheduleTask(BackgroundFetchConfig config) {
+        synchronized (mConfig) {
+            if (mConfig.containsKey(config.getTaskId())) {
+                // This BackgroundFetchConfig already exists?  Should we halt any existing Job/Alarm here?
             }
-        } else {
-            AlarmManager alarmManager = (AlarmManager) mContext.getSystemService(Context.ALARM_SERVICE);
-            if (alarmManager != null) {
-                alarmManager.cancel(getAlarmPI());
-            }
+            config.save(mContext);
+            mConfig.put(config.getTaskId(), config);
         }
+        String taskId = config.getTaskId();
+        registerTask(taskId);
     }
 
-    public void finish() {
-        Log.d(TAG, "- " + ACTION_FINISH);
-        if (mCompletionHandler != null) {
-            mCompletionHandler.finish();
-            mCompletionHandler = null;
+    @SuppressWarnings({"WeakerAccess"})
+    public void finish(String taskId) {
+        Log.d(TAG, "- " + ACTION_FINISH + ": " + taskId);
+        BGTask task = BGTask.getTask(taskId);
+        if (task != null) {
+            task.finish();
         }
     }
 
@@ -169,96 +189,94 @@ public class BackgroundFetch {
      * Used for Headless operation for registering completion-handler to execute #jobFinised on JobScheduler
      * @param completionHandler
      */
-    public void registerCompletionHandler(FetchJobService.CompletionHandler completionHandler) {
-        mCompletionHandler = completionHandler;
-    }
-
-    public void onFetch(FetchJobService.CompletionHandler completionHandler) {
-        mCompletionHandler = completionHandler;
-        onFetch();
-    }
-
-    public void onFetch() {
-        Log.d(TAG, "- Background Fetch event received");
-        if (mConfig == null) {
-            getThreadPool().execute(new Runnable() {
-                @Override public void run() {
-                    mConfig = new BackgroundFetchConfig.Builder().load(mContext);
-                    getUiHandler().post(new Runnable() {
-                        @Override public void run() { doFetch(); }
-                    });
-                }
-            });
+    public void registerCompletionHandler(String taskId, FetchJobService.CompletionHandler completionHandler) {
+        BGTask task = BGTask.getTask(taskId);
+        if (task == null) {
+            BGTask.addTask(new BGTask(taskId, completionHandler));
         } else {
-            doFetch();
+            task.setCompletionHandler(completionHandler);
         }
     }
 
-    private void doFetch() {
+    void onFetch(final BGTask task) {
+        BGTask.addTask(task);
+        Log.d(TAG, "- Background Fetch event received");
+        synchronized (mConfig) {
+            if (mConfig.isEmpty()) {
+                BackgroundFetchConfig.load(mContext, new BackgroundFetchConfig.OnLoadCallback() {
+                    @Override
+                    public void onLoad(List<BackgroundFetchConfig> result) {
+                        synchronized (mConfig) {
+                            for (BackgroundFetchConfig config : result) {
+                                mConfig.put(config.getTaskId(), config);
+                            }
+                        }
+                        doFetch(task.getTaskId());
+                    }
+                });
+
+                return;
+            }
+        }
+        doFetch(task.getTaskId());
+    }
+
+    private void registerTask(String taskId) {
+        Log.d(TAG, "- registerTask: " + taskId);
+
+        BackgroundFetchConfig config = getConfig(taskId);
+
+        if (config == null) {
+            Log.e(TAG, "- registerTask failed to find BackgroundFetchConfig for taskId " + taskId);
+            return;
+        }
+        config.save(mContext);
+
+        BGTask.schedule(mContext, config);
+    }
+
+    private void doFetch(String taskId) {
+        BackgroundFetchConfig config = getConfig(taskId);
+
+        if (config == null) {
+            Log.e(TAG, "- doFetch failed to find BackgroundFetchConfig for taskId " + taskId);
+            return;
+        }
+
         if (isMainActivityActive()) {
             if (mCallback != null) {
-                mCallback.onFetch();
+                mCallback.onFetch(taskId);
             }
-        } else if (mConfig.getStopOnTerminate()) {
+        } else if (config.getStopOnTerminate()) {
             Log.d(TAG, "- Stopping on terminate");
-            stop();
-        } else if (mConfig.getForceReload()) {
-            Log.d(TAG, "- MainActivity is inactive");
-            forceMainActivityReload();
-        } else if (mConfig.getJobService() != null) {
-            finish();
-            // Fire a headless background-fetch event.
-            if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                // API 21+ uses JobScheduler API to fire a Job to application's configured jobService class.
-                JobScheduler jobScheduler = (JobScheduler) mContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
-                try {
-                    JobInfo.Builder builder = new JobInfo.Builder((FETCH_JOB_ID - 1), new ComponentName(mContext, Class.forName(mConfig.getJobService())))
-                            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_NONE)
-                            .setRequiresDeviceIdle(false)
-                            .setRequiresCharging(false)
-                            .setOverrideDeadline(0L)
-                            .setMinimumLatency(0L)
-                            .setPersisted(false);
-                    if (jobScheduler != null) {
-                        jobScheduler.schedule(builder.build());
-                    }
-                } catch (ClassNotFoundException e) {
-                    Log.e(TAG, e.getMessage());
-                    e.printStackTrace();
-                } catch (IllegalArgumentException e) {
-                    Log.e(TAG, "- ERROR: Could not locate jobService: " + mConfig.getJobService() + ".  Did you forget to add it to your AndroidManifest.xml?");
-                    Log.e(TAG, "<service android:name=\"" + mConfig.getJobService() + "\" android:permission=\"android.permission.BIND_JOB_SERVICE\" android:exported=\"true\" />");
-                    e.printStackTrace();
+            stop(taskId);
+        } else if (config.getJobService() != null) {
+            try {
+                BGTask task = BGTask.getTask(taskId);
+                if (task != null) {
+                    task.fireHeadlessEvent(mContext, config);
+                } else {
+                    Log.e(TAG, "Failed to locate BGTask " + taskId);
                 }
-            } else {
-                // API <21 uses old AlarmManager API.
-                Intent intent = new Intent();
-                String event = mContext.getPackageName() + EVENT_FETCH;
-                intent.setAction(event);
-                mContext.sendBroadcast(intent);
+            } catch (BGTask.Error e) {
+                Log.e(TAG, "Headless task error: " + e.getMessage());
+                e.printStackTrace();
             }
         } else {
             // {stopOnTerminate: false, forceReload: false} with no Headless JobService??  Don't know what else to do here but stop
             Log.w(TAG, "- BackgroundFetch event has occurred while app is terminated but there's no jobService configured to handle the event.  BackgroundFetch will terminate.");
-            stop();
+            finish(taskId);
+            stop(taskId);
+        }
+        if (!config.getPeriodic()) {
+            config.destroy(mContext);
+            synchronized (mConfig) {
+                mConfig.remove(taskId);
+            }
         }
     }
-    public void forceMainActivityReload() {
-        Log.i(TAG,"- Forcing MainActivity reload");
-        PackageManager pm = mContext.getPackageManager();
-        Intent launchIntent = pm.getLaunchIntentForPackage(mContext.getPackageName());
-        if (launchIntent == null) {
-            Log.w(TAG, "- forceMainActivityReload failed to find launchIntent");
-            return;
-        }
-        launchIntent.setAction(ACTION_FORCE_RELOAD);
-        launchIntent.addFlags(Intent.FLAG_FROM_BACKGROUND);
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NO_USER_ACTION);
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
 
-        mContext.startActivity(launchIntent);
-    }
-
+    @SuppressWarnings({"WeakerAccess", "deprecation"})
     public Boolean isMainActivityActive() {
         Boolean isActive = false;
 
@@ -281,16 +299,16 @@ public class BackgroundFetch {
         return isActive;
     }
 
-    private PendingIntent getAlarmPI() {
-        Intent intent = new Intent(mContext, FetchAlarmReceiver.class);
-        intent.setAction(TAG);
-        return PendingIntent.getBroadcast(mContext, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+    private BackgroundFetchConfig getConfig(String taskId) {
+        synchronized (mConfig) {
+            return (mConfig.containsKey(taskId)) ? mConfig.get(taskId) : null;
+        }
     }
 
     /**
      * @interface BackgroundFetch.Callback
      */
     public interface Callback {
-        void onFetch();
+        void onFetch(String taskId);
     }
 }

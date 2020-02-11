@@ -7,19 +7,21 @@
 //
 
 #import "TSBackgroundFetch.h"
+#import "TSBGTask.h"
+#import "TSBGAppRefreshSubscriber.h"
 
 static NSString *const TAG = @"TSBackgroundFetch";
 
+static NSString *const BACKGROUND_REFRESH_TASK_ID = @"com.transistorsoft.fetch";
+
 @implementation TSBackgroundFetch {
-    NSMutableDictionary *listeners;
-    NSMutableDictionary *responses;
+    BOOL enabled;
     
-    void (^completionHandler)(UIBackgroundFetchResult);
-    BOOL hasReceivedEvent;
-    BOOL launchedInBackground;
     NSTimeInterval minimumFetchInterval;
-    
-    NSTimer *bootBufferTimer;
+        
+    id bgAppRefreshTask;
+    void (^completionHandler)(UIBackgroundFetchResult);
+    BOOL fetchScheduled;
 }
 
 + (TSBackgroundFetch *)sharedInstance
@@ -27,6 +29,8 @@ static NSString *const TAG = @"TSBackgroundFetch";
     static TSBackgroundFetch *instance = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
+        [TSBGTask load];
+        [TSBGAppRefreshSubscriber load];
         instance = [[self alloc] init];
     });
     return instance;
@@ -35,44 +39,103 @@ static NSString *const TAG = @"TSBackgroundFetch";
 -(instancetype)init
 {
     self = [super init];
+        
+    fetchScheduled = NO;
 
-    hasReceivedEvent = NO;
+    minimumFetchInterval = UIApplicationBackgroundFetchIntervalMinimum;
+         
     _stopOnTerminate = YES;
     _configured = NO;
     _active = NO;
-    minimumFetchInterval = UIApplicationBackgroundFetchIntervalMinimum;
-    
-    bootBufferTimer = nil;
-    listeners = [NSMutableDictionary new];
-    responses = [NSMutableDictionary new];
-    
+                            
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onAppTerminate) name:UIApplicationWillTerminateNotification object:nil];
     return self;
 }
 
-- (void) configure:(NSDictionary*)config callback:(void(^)(UIBackgroundRefreshStatus status))callback
-{
-    [self configure:config];
-    [self status:callback];
+- (void) registerAppRefreshTask {
+    if (@available(iOS 13.0, *)) {
+        [TSBGAppRefreshSubscriber registerTaskScheduler];
+        
+        [[BGTaskScheduler sharedScheduler] registerForTaskWithIdentifier:BACKGROUND_REFRESH_TASK_ID usingQueue:nil launchHandler:^(BGTask* task) {
+            [self handleBGAppRefreshTask:(BGAppRefreshTask*)task];
+        }];
+    }
 }
 
--(void) configure:(NSDictionary*)config
-{
-    [self applyConfig:config];
-    NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
-    [userDefaults setObject:config forKey:TAG];
-    _configured = YES;
+- (void) registerBGProcessingTask:(NSString *)identifier {
+    if (@available(iOS 13.0, *)) {
+        [TSBGTask registerForTaskWithIdentifier:identifier];
+    }
 }
-- (void) applyConfig:(NSDictionary*)config
-{
-    NSLog(@"[%@ configure]: %@", TAG, config);
 
-    if ([config objectForKey:@"stopOnTerminate"]) {
-        _stopOnTerminate = [[config objectForKey:@"stopOnTerminate"] boolValue];
+- (NSError*) scheduleBGAppRefresh {
+    if (fetchScheduled) return nil;
+    
+    NSLog(@"[%@ scheduleBGAppRefresh] %@", TAG, BACKGROUND_REFRESH_TASK_ID);
+        
+    NSError *error = nil;
+    
+    if (@available (iOS 13.0, *)) {
+        if ([TSBGAppRefreshSubscriber useTaskScheduler]) {
+            BGTaskScheduler *scheduler = [BGTaskScheduler sharedScheduler];
+            BGAppRefreshTaskRequest *request = [[BGAppRefreshTaskRequest alloc] initWithIdentifier:BACKGROUND_REFRESH_TASK_ID];
+            request.earliestBeginDate = [NSDate dateWithTimeIntervalSinceNow:minimumFetchInterval];
+            [scheduler submitTaskRequest:request error:&error];
+        } else {
+            [self setMinimumFetchInterval];
+        }
+    } else {
+        [self setMinimumFetchInterval];
     }
-    if ([config objectForKey:@"minimumFetchInterval"]) {
-        minimumFetchInterval = [[config objectForKey:@"minimumFetchInterval"] doubleValue] * 60;
+    if (!error) {
+        fetchScheduled = YES;
     }
+    return error;
+}
+
+-(void) cancelBGAppRefresh {
+    if (@available (iOS 13.0, *)) {
+        BGTaskScheduler *scheduler = [BGTaskScheduler sharedScheduler];
+        [scheduler cancelTaskRequestWithIdentifier:BACKGROUND_REFRESH_TASK_ID];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalNever];
+        });
+    }
+}
+
+-(void) setMinimumFetchInterval {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:minimumFetchInterval];
+    });
+}
+
+/// Callback from BGTaskScheduler
+-(void) handleBGAppRefreshTask:(BGAppRefreshTask*)task API_AVAILABLE(ios(13.0)) {
+    NSLog(@"[%@ handleBGAppRefreshTask]", TAG);
+            
+    __block BGAppRefreshTask *weakTask = task;
+    task.expirationHandler = ^{
+        NSLog(@"[%@ handleBGAppRefreshTask] WARNING: expired before #finish was executed.", TAG);
+        if (weakTask) [weakTask setTaskCompletedWithSuccess:NO];
+    };
+    
+    fetchScheduled = NO;
+    [self scheduleBGAppRefresh];
+    
+    bgAppRefreshTask = task;
+    [TSBGAppRefreshSubscriber execute];
+}
+
+/// @deprecated Old-syle fetch callback.
+- (void) performFetchWithCompletionHandler:(void (^)(UIBackgroundFetchResult))handler applicationState:(UIApplicationState)state {
+    NSLog(@"[%@ performFetchWithCompletionHandler]", TAG);
+        
+    fetchScheduled = NO;
+    [self scheduleBGAppRefresh];
+    
+    completionHandler = handler;
+    [TSBGAppRefreshSubscriber execute];
 }
 
 -(void) status:(void(^)(UIBackgroundRefreshStatus status))callback
@@ -82,176 +145,160 @@ static NSString *const TAG = @"TSBackgroundFetch";
     });
 }
 
--(void) addListener:(NSString*)componentName callback:(void (^)(void))callback
-{
-    NSLog(@"[%@ addListener]: %@", TAG, componentName);
-    @synchronized(listeners) {
-        [listeners setObject:callback forKey:componentName];
-    }
-    
-    // Run callback immediately if app was launched due to background-fetch event.
-    if (launchedInBackground) {
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            callback();
-        });
-    }
-}
-
--(BOOL) hasListener:(NSString*)componentName
-{
-    return [listeners objectForKey:componentName] != nil;
-}
-
--(void) removeListener:(NSString*)componentName
-{
-    @synchronized(listeners) {
-        if ([listeners objectForKey:componentName]) {
-            NSLog(@"[%@ removeListener]: %@", TAG, componentName);
-            [listeners removeObjectForKey:componentName];
-        }
-    }
-}
-
-- (void) start:(void(^)(UIBackgroundRefreshStatus status))callback
-{
+-(void) configure:(NSTimeInterval)delay callback:(void(^)(UIBackgroundRefreshStatus status))callback {
+    _configured = YES;
+    minimumFetchInterval = delay;
     [self status:^(UIBackgroundRefreshStatus status) {
-        if (status == UIBackgroundRefreshStatusAvailable) { [self start]; }
+        if (status == UIBackgroundRefreshStatusAvailable) {
+            [self scheduleBGAppRefresh];
+        }
         callback(status);
     }];
 }
 
-- (void) start
-{
-    NSLog(@"[%@ start]", TAG);
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:minimumFetchInterval];
-    });
-}
-
-- (void) stop
-{
-    NSLog(@"[%@ stop]", TAG);
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalNever];
-    });
-}
-
-- (void) performFetchWithCompletionHandler:(void (^)(UIBackgroundFetchResult))handler applicationState:(UIApplicationState)state
-{
-    NSLog(@"[%@ performFetchWithCompletionHandler]", TAG);
-    if (!hasReceivedEvent) {
-        hasReceivedEvent = YES;
-        launchedInBackground = (state == UIApplicationStateBackground);
-    }
-    _active = YES;
-    @synchronized (responses) {
-        [responses removeAllObjects];
-    }
-    @synchronized(listeners) {
-        if ([listeners count] > 0) {
-            completionHandler = handler;
-            for (NSString* componentName in listeners) {
-                void (^callback)() = [listeners objectForKey:componentName];
-                callback();
+-(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic callback:(void (^)(NSString* taskId))callback {
+    TSBGTask *tsTask = [TSBGTask get:identifier];
+    if (tsTask) {
+        tsTask.delay = delay;
+        tsTask.periodic = periodic;
+        tsTask.callback = callback;
+        if (@available(iOS 13.0, *)) {
+            if (tsTask.task && !tsTask.executed) {
+                [tsTask execute];
+                return nil;
+            } else {
+                return [tsTask schedule];
             }
-        } else if (launchedInBackground) {
-            if (!_configured) {
-                NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
-                NSDictionary *config = [userDefaults objectForKey:TAG];
-                if (config != nil) {
-                    [self applyConfig:config];
-                }
-            }
-            // Wait for handlers to arrive
-            completionHandler = handler;
-        } else {
-            // No handlers?
-            handler(UIBackgroundFetchResultNoData);
         }
-    }
-}
-
-- (void) finish:(NSString*)componentName result:(UIBackgroundFetchResult) result
-{
-    @synchronized (responses) {
-        if (completionHandler == nil) {
-            NSLog(@"[%@ finish] WARNING: completionHandler is nil.  No fetch event to finish.  Ignored", TAG);
-            return;
-        }
-        if ([responses objectForKey:componentName]) {
-            NSLog(@"[%@ finish] WARNING: finish already called for %@.  Ignored", TAG, componentName);
-            return;
-        }
-        if (![self hasListener:componentName]) {
-            NSLog(@"%@ finish] WARNING: no listener found to finish for %@.  Ignored", TAG, componentName);
-            return;
-        }
-        NSLog(@"[%@ finish]: %@", TAG, componentName);
-        [responses setObject:@(result) forKey:componentName];
-        
-        if (launchedInBackground && (bootBufferTimer == nil)) {
-            // Give other modules 5 second buffer before we finish.  Other modules may not yet have registed their callback when booted in background
-            bootBufferTimer = [NSTimer timerWithTimeInterval:5 target:self selector:@selector(doFinish) userInfo:nil repeats:NO];
-            [[NSRunLoop mainRunLoop] addTimer:bootBufferTimer forMode:NSRunLoopCommonModes];
-            
-        } else {
-            [self doFinish];
-        }
-    }
-}
-
-- (void) onBootBufferTimeout:(NSTimer*)timer
-{
-    [self doFinish];
-}
-
-- (void) doFinish
-{
-    if (bootBufferTimer != nil) {
-        [bootBufferTimer invalidate];
-        bootBufferTimer = nil;
+    } else {
+        tsTask = [[TSBGTask alloc] initWithIdentifier:identifier delay:delay periodic:periodic callback:callback];
+        tsTask.callback = callback;
     }
     
-    @synchronized (responses) {
-        if ([[responses allKeys] count] == [[listeners allKeys] count]) {
-            NSUInteger fetchResult = UIBackgroundFetchResultNoData;
-            //for (id response in responses) {
-            for (NSString* componentName in responses) {
-                id response = [responses objectForKey:componentName];
-                if ([response integerValue] == UIBackgroundFetchResultFailed) {
-                    fetchResult = UIBackgroundFetchResultFailed;
-                    break;
-                } else if ([response integerValue] == UIBackgroundFetchResultNewData) {
-                    fetchResult = UIBackgroundFetchResultNewData;
-                }
-            }
-            NSLog(@"[%@ doFinish] Complete, UIBackgroundFetchResult: %lu, responses: %lu", TAG, (long)fetchResult, (long)[responses count]);
-            completionHandler(fetchResult);
-            _active = NO;
-            [responses removeAllObjects];
-            completionHandler = nil;
-            
-            if (launchedInBackground && _stopOnTerminate) {
-                [self stop];
-            }
-            launchedInBackground = NO;
-        }
+    NSError *error = [tsTask schedule];
+    if (error) {
+        NSLog(@"[%@ scheduleTask] ERROR:  Failed to submit task request: %@", TAG, error);
+    }
+    return error;
+}
+
+-(void) addListener:(NSString*)componentName callback:(void (^)(NSString* componentName))callback {
+    TSBGAppRefreshSubscriber *subscriber = [TSBGAppRefreshSubscriber get:componentName];
+    if (subscriber) {
+        subscriber.callback = callback;
+    } else {
+        subscriber = [[TSBGAppRefreshSubscriber alloc] initWithIdentifier:componentName callback:callback];
+    }
+    if (bgAppRefreshTask || completionHandler) {
+        [subscriber execute];
     }
 }
 
-- (void) onAppTerminate
-{
+-(BOOL) hasListener:(NSString*)identifier {
+    return ([TSBGAppRefreshSubscriber get:identifier] != nil);
+}
+
+-(void) removeListener:(NSString*)identifier {
+    TSBGAppRefreshSubscriber *subscriber = [TSBGAppRefreshSubscriber get:identifier];
+    if (!subscriber) {
+        NSLog(@"[%@ removeListener] WARNING:  Failed to find listener for identifier: %@", TAG, identifier);
+        return;
+    }
+    [subscriber destroy];
+    if ([[TSBGAppRefreshSubscriber subscribers] count] < 1) {
+        [self cancelBGAppRefresh];
+    }
+}
+
+- (NSError*) start:(NSString*)identifier {
+    NSLog(@"[%@ start] %@", TAG, identifier);
+    
+    if (!identifier) {
+        return [self scheduleBGAppRefresh];
+    } else {
+        TSBGTask *tsTask = [TSBGTask get:identifier];
+        if (!tsTask) {
+            NSString *msg = [NSString stringWithFormat:@"Could not find TSBGTask %@", identifier];
+            NSLog(@"[%@ start] ERROR:  %@", TAG, msg);
+            NSError *error = [[NSError alloc] initWithDomain:TAG code:-2 userInfo:@{NSLocalizedFailureReasonErrorKey:msg}];
+            return error;
+        }
+        tsTask.enabled = YES;
+        [tsTask save];
+        return [tsTask schedule];
+    }
+}
+
+- (void) stop:(NSString*)identifier {
+    NSLog(@"[%@ stop] %@", TAG, identifier);
+    if (!identifier) {
+        NSArray *tsTasks = [TSBGTask tasks];
+        for (TSBGTask *tsTask in tsTasks) {
+            [tsTask stop];
+        }
+    } else {
+        TSBGTask *tsTask = [TSBGTask get:identifier];
+        [tsTask stop];
+    }
+}
+
+- (void) finish:(NSString*)taskId {
+    if (!taskId) { taskId = BACKGROUND_REFRESH_TASK_ID; }
+
+    TSBGTask *tsTask = [TSBGTask get:taskId];
+    if (tsTask) {
+        if (@available(iOS 13.0, *)) {
+            [tsTask finish:YES];
+        }
+        return;
+    }
+    
+    if (!bgAppRefreshTask && !completionHandler) {
+        NSLog(@"[%@ finish] %@ Called without a task to finish.  Ignoring.", TAG, taskId);
+        return;
+    }
+                
+    TSBGAppRefreshSubscriber *subscriber = [TSBGAppRefreshSubscriber get:taskId];
+    if (subscriber) {
+        [subscriber finish];
+        
+        NSArray *subscribers = [[TSBGAppRefreshSubscriber subscribers] allValues];
+        long total = [subscribers count];
+        long count = 0;
+        
+        for (TSBGAppRefreshSubscriber *subscriber in subscribers) {
+            if (subscriber.finished) count++;
+        }
+        
+        NSLog(@"[%@ finish] %@ (%ld of %ld)", TAG, subscriber.identifier, count, total);
+
+        if (total != count) return;
+
+        // If we arrive here without jumping out of foreach above, all subscribers are finished.
+        if (bgAppRefreshTask) {
+            // If we arrive here, all Fetch tasks must be finished.
+            if (@available(iOS 13.0, *)) {
+                [(BGAppRefreshTask*) bgAppRefreshTask setTaskCompletedWithSuccess:YES];
+            }
+            bgAppRefreshTask = nil;
+        } else if (completionHandler) {
+            completionHandler(UIBackgroundFetchResultNewData);
+            completionHandler = nil;
+        }
+    } else {
+        NSLog(@"[%@ finish] Failed to find Fetch subscriber %@", TAG, taskId);
+    }
+}
+
+- (void) onAppTerminate {
     NSLog(@"[%@ onAppTerminate]", TAG);
     if (_stopOnTerminate) {
-        [self stop];
+        //[self stop];
     }
 }
 
-- (void) dealloc
-{
+- (void) dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
-    [listeners removeAllObjects];
-    [responses removeAllObjects];
 }
 @end
 
