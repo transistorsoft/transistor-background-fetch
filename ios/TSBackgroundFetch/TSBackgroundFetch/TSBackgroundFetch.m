@@ -93,6 +93,17 @@ static NSString *const BACKGROUND_REFRESH_TASK_ID = @"com.transistorsoft.fetch";
     return error;
 }
 
+-(void) cancelBGAppRefresh {
+    if (@available (iOS 13.0, *)) {
+        BGTaskScheduler *scheduler = [BGTaskScheduler sharedScheduler];
+        [scheduler cancelTaskRequestWithIdentifier:BACKGROUND_REFRESH_TASK_ID];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalNever];
+        });
+    }
+}
+
 -(void) setMinimumFetchInterval {
     dispatch_async(dispatch_get_main_queue(), ^{
         [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:minimumFetchInterval];
@@ -194,12 +205,15 @@ static NSString *const BACKGROUND_REFRESH_TASK_ID = @"com.transistorsoft.fetch";
         return;
     }
     [subscriber destroy];
+    if ([[TSBGAppRefreshSubscriber subscribers] count] < 1) {
+        [self cancelBGAppRefresh];
+    }
 }
 
 - (NSError*) start:(NSString*)identifier {
     NSLog(@"[%@ start] %@", TAG, identifier);
     
-    if ([identifier isEqualToString:BACKGROUND_REFRESH_TASK_ID]) {
+    if (!identifier) {
         return [self scheduleBGAppRefresh];
     } else {
         TSBGTask *tsTask = [TSBGTask get:identifier];
@@ -217,9 +231,15 @@ static NSString *const BACKGROUND_REFRESH_TASK_ID = @"com.transistorsoft.fetch";
 
 - (void) stop:(NSString*)identifier {
     NSLog(@"[%@ stop] %@", TAG, identifier);
-    
-    TSBGTask *tsTask = [TSBGTask get:identifier];
-    [tsTask stop];    
+    if (!identifier) {
+        NSArray *tsTasks = [TSBGTask tasks];
+        for (TSBGTask *tsTask in tsTasks) {
+            [tsTask stop];
+        }
+    } else {
+        TSBGTask *tsTask = [TSBGTask get:identifier];
+        [tsTask stop];
+    }
 }
 
 - (void) finish:(NSString*)taskId {
