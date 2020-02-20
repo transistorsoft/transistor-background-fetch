@@ -12,7 +12,8 @@
 
 static NSString *const TAG = @"TSBackgroundFetch";
 
-static NSString *const BACKGROUND_REFRESH_TASK_ID = @"com.transistorsoft.fetch";
+static NSString *const BACKGROUND_REFRESH_TASK_ID   = @"com.transistorsoft.fetch";
+static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermittedIdentifiers";
 
 @implementation TSBackgroundFetch {
     BOOL enabled;
@@ -43,13 +44,27 @@ static NSString *const BACKGROUND_REFRESH_TASK_ID = @"com.transistorsoft.fetch";
     fetchScheduled = NO;
 
     minimumFetchInterval = UIApplicationBackgroundFetchIntervalMinimum;
-         
+    
+    _fetchTaskId = BACKGROUND_REFRESH_TASK_ID;
     _stopOnTerminate = YES;
     _configured = NO;
     _active = NO;
                             
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(onAppTerminate) name:UIApplicationWillTerminateNotification object:nil];
     return self;
+}
+
+- (void) didFinishLaunching {
+    NSArray *permittedIdentifiers = [[NSBundle mainBundle] objectForInfoDictionaryKey:PERMITTED_IDENTIFIERS_KEY];
+    if (!permittedIdentifiers) return;
+
+    for (NSString *identifier in permittedIdentifiers) {
+        if ([identifier isEqualToString:BACKGROUND_REFRESH_TASK_ID]) {
+            [self registerAppRefreshTask];
+        } else {
+            [self registerBGProcessingTask:identifier];
+        }
+    }
 }
 
 - (void) registerAppRefreshTask {
