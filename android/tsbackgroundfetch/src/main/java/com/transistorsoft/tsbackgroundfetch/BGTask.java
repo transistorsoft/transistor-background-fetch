@@ -68,7 +68,7 @@ public class BGTask {
     String getTaskId() { return mTaskId; }
 
     boolean hasTaskId(String taskId) {
-        return mTaskId.equalsIgnoreCase(taskId);
+        return ((mTaskId != null) && mTaskId.equalsIgnoreCase(taskId));
     }
 
     void setCompletionHandler(FetchJobService.CompletionHandler handler) {
