@@ -29,7 +29,7 @@ public class FetchAlarmReceiver extends BroadcastReceiver {
             }
         };
 
-        BGTask task = new BGTask(intent.getAction(), completionHandler);
+        BGTask task = new BGTask(intent.getAction(), completionHandler, 0);
         BackgroundFetch.getInstance(context.getApplicationContext()).onFetch(task);
     }
 }
