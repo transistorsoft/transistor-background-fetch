@@ -23,8 +23,7 @@ public class FetchJobService extends JobService {
                 jobFinished(params, false);
             }
         };
-
-        BGTask task = new BGTask(taskId, completionHandler);
+        BGTask task = new BGTask(taskId, completionHandler, params.getJobId());
         BackgroundFetch.getInstance(getApplicationContext()).onFetch(task);
 
         return true;

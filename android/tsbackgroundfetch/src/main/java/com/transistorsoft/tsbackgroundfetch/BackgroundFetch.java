@@ -132,15 +132,13 @@ public class BackgroundFetch {
 
         if (taskId == null) {
             synchronized (mConfig) {
-
                 for (BackgroundFetchConfig config : mConfig.values()) {
-
                     BGTask task = BGTask.getTask(config.getTaskId());
                     if (task != null) {
                         task.finish();
                         BGTask.removeTask(config.getTaskId());
                     }
-                    BGTask.cancel(mContext, config);
+                    BGTask.cancel(mContext, config.getTaskId(), config.getJobId());
                     config.destroy(mContext);
                 }
                 BGTask.clear();
@@ -154,7 +152,7 @@ public class BackgroundFetch {
             BackgroundFetchConfig config = getConfig(taskId);
             if (config != null) {
                 config.destroy(mContext);
-                BGTask.cancel(mContext, config);
+                BGTask.cancel(mContext, config.getTaskId(), config.getJobId());
             }
         }
     }
@@ -185,19 +183,6 @@ public class BackgroundFetch {
         return STATUS_AVAILABLE;
     }
 
-    /**
-     * Used for Headless operation for registering completion-handler to execute #jobFinised on JobScheduler
-     * @param completionHandler
-     */
-    public void registerCompletionHandler(String taskId, FetchJobService.CompletionHandler completionHandler) {
-        BGTask task = BGTask.getTask(taskId);
-        if (task == null) {
-            BGTask.addTask(new BGTask(taskId, completionHandler));
-        } else {
-            task.setCompletionHandler(completionHandler);
-        }
-    }
-
     void onFetch(final BGTask task) {
         BGTask.addTask(task);
         Log.d(TAG, "- Background Fetch event received");
@@ -211,14 +196,14 @@ public class BackgroundFetch {
                                 mConfig.put(config.getTaskId(), config);
                             }
                         }
-                        doFetch(task.getTaskId());
+                        doFetch(task);
                     }
                 });
 
                 return;
             }
         }
-        doFetch(task.getTaskId());
+        doFetch(task);
     }
 
     private void registerTask(String taskId) {
@@ -235,29 +220,24 @@ public class BackgroundFetch {
         BGTask.schedule(mContext, config);
     }
 
-    private void doFetch(String taskId) {
-        BackgroundFetchConfig config = getConfig(taskId);
+    private void doFetch(BGTask task) {
+        BackgroundFetchConfig config = getConfig(task.getTaskId());
 
         if (config == null) {
-            Log.e(TAG, "- doFetch failed to find BackgroundFetchConfig for taskId " + taskId);
+            BGTask.cancel(mContext, task.getTaskId(), task.getJobId());
             return;
         }
 
         if (isMainActivityActive()) {
             if (mCallback != null) {
-                mCallback.onFetch(taskId);
+                mCallback.onFetch(task.getTaskId());
             }
         } else if (config.getStopOnTerminate()) {
             Log.d(TAG, "- Stopping on terminate");
-            stop(taskId);
+            stop(task.getTaskId());
         } else if (config.getJobService() != null) {
             try {
-                BGTask task = BGTask.getTask(taskId);
-                if (task != null) {
-                    task.fireHeadlessEvent(mContext, config);
-                } else {
-                    Log.e(TAG, "Failed to locate BGTask " + taskId);
-                }
+                task.fireHeadlessEvent(mContext, config);
             } catch (BGTask.Error e) {
                 Log.e(TAG, "Headless task error: " + e.getMessage());
                 e.printStackTrace();
@@ -265,13 +245,13 @@ public class BackgroundFetch {
         } else {
             // {stopOnTerminate: false, forceReload: false} with no Headless JobService??  Don't know what else to do here but stop
             Log.w(TAG, "- BackgroundFetch event has occurred while app is terminated but there's no jobService configured to handle the event.  BackgroundFetch will terminate.");
-            finish(taskId);
-            stop(taskId);
+            finish(task.getTaskId());
+            stop(task.getTaskId());
         }
         if (!config.getPeriodic()) {
             config.destroy(mContext);
             synchronized (mConfig) {
-                mConfig.remove(taskId);
+                mConfig.remove(task.getTaskId());
             }
         }
     }

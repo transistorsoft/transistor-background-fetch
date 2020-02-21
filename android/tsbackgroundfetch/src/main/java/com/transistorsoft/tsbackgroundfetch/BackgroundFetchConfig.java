@@ -209,9 +209,6 @@ public class BackgroundFetchConfig {
     }
 
     void save(Context context) {
-
-        if (config.stopOnTerminate) return;
-
         SharedPreferences preferences = context.getSharedPreferences(BackgroundFetch.TAG, 0);
         Set<String> taskIds = preferences.getStringSet("tasks", new HashSet<String>());
         if (taskIds == null) {
@@ -304,7 +301,11 @@ public class BackgroundFetchConfig {
     }
 
     int getJobId() {
-        return (isFetchTask()) ? FETCH_JOB_ID : config.taskId.hashCode();
+        if (config.forceAlarmManager) {
+            return 0;
+        } else {
+            return (isFetchTask()) ? FETCH_JOB_ID : config.taskId.hashCode();
+        }
     }
 
     public String toString() {

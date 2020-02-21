@@ -59,13 +59,16 @@ public class BGTask {
 
     private FetchJobService.CompletionHandler mCompletionHandler;
     private String mTaskId;
+    private int mJobId;
 
-    BGTask(String taskId, FetchJobService.CompletionHandler handler) {
+    BGTask(String taskId, FetchJobService.CompletionHandler handler, int jobId) {
         mTaskId = taskId;
         mCompletionHandler = handler;
+        mJobId = jobId;
     }
 
     String getTaskId() { return mTaskId; }
+    int getJobId() { return mJobId; }
 
     boolean hasTaskId(String taskId) {
         return ((mTaskId != null) && mTaskId.equalsIgnoreCase(taskId));
@@ -174,16 +177,17 @@ public class BGTask {
         }
     }
 
-    static void cancel(Context context, BackgroundFetchConfig config) {
-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && !config.getForceAlarmManager()) {
+    static void cancel(Context context, String taskId, int jobId) {
+        Log.i(BackgroundFetch.TAG, "- cancel taskId=" + taskId + ", jobId=" + jobId);
+        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && (jobId != 0)) {
             JobScheduler jobScheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             if (jobScheduler != null) {
-                jobScheduler.cancel(config.getJobId());
+                jobScheduler.cancel(jobId);
             }
         } else {
             AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
             if (alarmManager != null) {
-                alarmManager.cancel(BGTask.getAlarmPI(context, config.getTaskId()));
+                alarmManager.cancel(BGTask.getAlarmPI(context, taskId));
             }
         }
     }
