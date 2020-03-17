@@ -171,7 +171,7 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     }];
 }
 
--(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic callback:(void (^)(NSString* taskId))callback {
+-(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic requiresExternalPower:(BOOL)requiresExternalPower requiresNetworkConnectivity:(BOOL)requiresNetworkConnectivity callback:(void (^)(NSString* taskId))callback {
     TSBGTask *tsTask = [TSBGTask get:identifier];
     if (tsTask) {
         tsTask.delay = delay;
@@ -186,7 +186,7 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
             }
         }
     } else {
-        tsTask = [[TSBGTask alloc] initWithIdentifier:identifier delay:delay periodic:periodic callback:callback];
+        tsTask = [[TSBGTask alloc] initWithIdentifier:identifier delay:delay periodic:periodic requiresExternalPower:requiresExternalPower requiresNetworkConnectivity:requiresNetworkConnectivity callback:callback];
         tsTask.callback = callback;
     }
     
