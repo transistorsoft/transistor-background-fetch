@@ -192,7 +192,6 @@ public class BGTask {
         }
     }
 
-
     static PendingIntent getAlarmPI(Context context, String taskId) {
         Intent intent = new Intent(context, FetchAlarmReceiver.class);
         intent.setAction(taskId);

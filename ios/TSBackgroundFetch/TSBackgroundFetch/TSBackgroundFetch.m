@@ -112,6 +112,7 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     if (@available (iOS 13.0, *)) {
         BGTaskScheduler *scheduler = [BGTaskScheduler sharedScheduler];
         [scheduler cancelTaskRequestWithIdentifier:BACKGROUND_REFRESH_TASK_ID];
+        fetchScheduled = NO;
     } else {
         dispatch_async(dispatch_get_main_queue(), ^{
             [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalNever];

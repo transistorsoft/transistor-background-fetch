@@ -6,7 +6,7 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
-import android.support.annotation.Nullable;
+
 import android.util.Log;
 
 import java.util.HashMap;
@@ -123,7 +123,7 @@ public class BackgroundFetch {
     }
 
     @SuppressWarnings({"WeakerAccess"})
-    public void stop(@Nullable String taskId) {
+    public void stop(String taskId) {
         String msg = "- " + ACTION_STOP;
         if (taskId != null) {
             msg += ": " + taskId;
