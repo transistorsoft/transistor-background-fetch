@@ -3,7 +3,6 @@ package com.transistorsoft.tsbackgroundfetch;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.os.Bundle;
 import android.os.PowerManager;
 import android.util.Log;
 
@@ -24,8 +23,10 @@ public class FetchAlarmReceiver extends BroadcastReceiver {
         FetchJobService.CompletionHandler completionHandler = new FetchJobService.CompletionHandler() {
             @Override
             public void finish() {
-                wakeLock.release();
-                Log.d(BackgroundFetch.TAG, "- FetchAlarmReceiver finish");
+                if (wakeLock.isHeld()) {
+                    wakeLock.release();
+                    Log.d(BackgroundFetch.TAG, "- FetchAlarmReceiver finish");
+                }
             }
         };
 
