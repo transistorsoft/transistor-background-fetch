@@ -4,6 +4,7 @@ import android.annotation.TargetApi;
 import android.app.ActivityManager;
 
 import android.content.Context;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -99,10 +100,12 @@ public class BackgroundFetch {
                     synchronized (mConfig) {
                         mConfig.put(config.getTaskId(), config);
                     }
-                    if (config.isFetchTask()) {
-                        start(config.getTaskId());
-                    } else {
-                        scheduleTask(config);
+                    if ((android.os.Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) || config.getForceAlarmManager()) {
+                        if (config.isFetchTask()) {
+                            start(config.getTaskId());
+                        } else {
+                            scheduleTask(config);
+                        }
                     }
                 }
             }
