@@ -86,9 +86,13 @@ task cordovaRelease { task ->
     doLast {
         delete "$cordovaDir/src/android/libs"
         copy {
-            from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
-            into("$cordovaDir/src/android/libs/tsbackgroundfetch")
-            rename(/(.*)-release/, '$1-' + VERSION_NAME)
+            // Maven repo format.
+            from("$buildDir/repo-local")
+            into("$cordovaDir/src/android/libs")
+            // OLD FORMAT
+            //from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            //into("$cordovaDir/src/android/libs/tsbackgroundfetch")
+            //rename(/(.*)-release/, '$1-' + VERSION_NAME)
         }
     }
 }
@@ -99,9 +103,13 @@ task reactNativeRelease { task ->
     doLast {
         delete "$reactNativeDir/android/libs"
         copy {
-            from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            // Maven repo format.
+            from("$buildDir/repo-local")
             into("$reactNativeDir/android/libs")
-            rename(/(.*)-release/, '$1-' + VERSION_NAME)
+            // OLD format.
+            //from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            //into("$reactNativeDir/android/libs")
+            //rename(/(.*)-release/, '$1-' + VERSION_NAME)
         }
     }
 }
@@ -112,9 +120,13 @@ task flutterRelease { task ->
     doLast {
         delete "$flutterDir/android/libs"
         copy {
-            from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            // Maven repo format.
+            from("$buildDir/repo-local")
             into("$flutterDir/android/libs")
-            rename(/(.*)-release/, '$1-' + VERSION_NAME)
+            // OLD format.
+            //from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            //into("$flutterDir/android/libs")
+            //rename(/(.*)-release/, '$1-' + VERSION_NAME)
         }
     }
 }
