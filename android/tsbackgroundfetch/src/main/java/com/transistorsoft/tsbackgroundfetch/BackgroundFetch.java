@@ -4,9 +4,10 @@ import android.annotation.TargetApi;
 import android.app.ActivityManager;
 
 import android.content.Context;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.support.annotation.Nullable;
+
 import android.util.Log;
 
 import java.util.HashMap;
@@ -99,10 +100,12 @@ public class BackgroundFetch {
                     synchronized (mConfig) {
                         mConfig.put(config.getTaskId(), config);
                     }
-                    if (config.isFetchTask()) {
-                        start(config.getTaskId());
-                    } else {
-                        scheduleTask(config);
+                    if ((android.os.Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) || config.getForceAlarmManager()) {
+                        if (config.isFetchTask()) {
+                            start(config.getTaskId());
+                        } else {
+                            scheduleTask(config);
+                        }
                     }
                 }
             }
@@ -123,7 +126,7 @@ public class BackgroundFetch {
     }
 
     @SuppressWarnings({"WeakerAccess"})
-    public void stop(@Nullable String taskId) {
+    public void stop(String taskId) {
         String msg = "- " + ACTION_STOP;
         if (taskId != null) {
             msg += ": " + taskId;

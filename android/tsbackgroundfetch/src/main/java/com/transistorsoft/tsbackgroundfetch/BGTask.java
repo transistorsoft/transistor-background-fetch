@@ -89,7 +89,8 @@ public class BGTask {
     static void schedule(Context context, BackgroundFetchConfig config) {
         Log.d(BackgroundFetch.TAG, config.toString());
 
-        long interval = (config.isFetchTask()) ? (config.getMinimumFetchInterval() * 60L * 1000L) : config.getDelay();
+        long interval = (config.isFetchTask()) ? (TimeUnit.MINUTES.toMillis(config.getMinimumFetchInterval())) : config.getDelay();
+
         if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && !config.getForceAlarmManager()) {
             // API 21+ uses new JobScheduler API
 
@@ -102,7 +103,7 @@ public class BGTask {
 
             if (config.getPeriodic()) {
                 if (android.os.Build.VERSION.SDK_INT >= 24) {
-                    builder.setPeriodic(interval, TimeUnit.MINUTES.toMillis(5));
+                    builder.setPeriodic(interval, interval);
                 } else {
                     builder.setPeriodic(interval);
                 }
@@ -191,7 +192,6 @@ public class BGTask {
             }
         }
     }
-
 
     static PendingIntent getAlarmPI(Context context, String taskId) {
         Intent intent = new Intent(context, FetchAlarmReceiver.class);

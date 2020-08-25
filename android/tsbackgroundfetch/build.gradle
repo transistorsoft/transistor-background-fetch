@@ -3,15 +3,13 @@ apply plugin: 'maven'
 apply plugin: 'maven-publish'
 
 android {
-    compileSdkVersion 28
-
-
+    compileSdkVersion rootProject.compileSdkVersion
     defaultConfig {
         minSdkVersion 16
-        targetSdkVersion 28
+        targetSdkVersion rootProject.targetSdkVersion
         versionCode 1
         versionName "1.0"
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -39,12 +37,13 @@ android {
 }
 
 dependencies {
+    testImplementation 'junit:junit:4.12'
+    androidTestImplementation 'androidx.test:runner:1.2.0'
+
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
-    implementation 'com.android.support:appcompat-v7:28.0.0'
-    testImplementation 'junit:junit:4.12'
-    androidTestImplementation 'com.android.support.test:runner:1.0.2'
-    androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
+    //implementation "androidx.appcompat:appcompat:$rootProject.appCompatVersion"
+
 }
 
 // Build Release
@@ -87,9 +86,13 @@ task cordovaRelease { task ->
     doLast {
         delete "$cordovaDir/src/android/libs"
         copy {
-            from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
-            into("$cordovaDir/src/android/libs/tsbackgroundfetch")
-            rename(/(.*)-release/, '$1-' + VERSION_NAME)
+            // Maven repo format.
+            from("$buildDir/repo-local")
+            into("$cordovaDir/src/android/libs")
+            // OLD FORMAT
+            //from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            //into("$cordovaDir/src/android/libs/tsbackgroundfetch")
+            //rename(/(.*)-release/, '$1-' + VERSION_NAME)
         }
     }
 }
@@ -100,9 +103,13 @@ task reactNativeRelease { task ->
     doLast {
         delete "$reactNativeDir/android/libs"
         copy {
-            from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            // Maven repo format.
+            from("$buildDir/repo-local")
             into("$reactNativeDir/android/libs")
-            rename(/(.*)-release/, '$1-' + VERSION_NAME)
+            // OLD format.
+            //from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            //into("$reactNativeDir/android/libs")
+            //rename(/(.*)-release/, '$1-' + VERSION_NAME)
         }
     }
 }
@@ -113,15 +120,19 @@ task flutterRelease { task ->
     doLast {
         delete "$flutterDir/android/libs"
         copy {
-            from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            // Maven repo format.
+            from("$buildDir/repo-local")
             into("$flutterDir/android/libs")
-            rename(/(.*)-release/, '$1-' + VERSION_NAME)
+            // OLD format.
+            //from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+            //into("$flutterDir/android/libs")
+            //rename(/(.*)-release/, '$1-' + VERSION_NAME)
         }
     }
 }
 
 task nativeScriptRelease(type: Copy) {
     from('./build/outputs/aar/tsbackgroundfetch-release.aar')
-    into('$WORKSPACE_PATH/NativeScript/background-geolocation/nativescript-background-fetch/src/platforms/android/libs')
+    into("$WORKSPACE_PATH/NativeScript/background-geolocation/nativescript-background-fetch/src/platforms/android/libs")
     rename('tsbackgroundfetch-release.aar', 'tsbackgroundfetch.aar')
 }
