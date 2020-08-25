@@ -108,13 +108,15 @@ static NSMutableArray *_tasks;
     return self;
 }
 
--(instancetype) initWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic callback:(void (^)(NSString* taskId))callback {
+-(instancetype) initWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic requiresExternalPower:(BOOL)requiresExternalPower requiresNetworkConnectivity:(BOOL)requiresNetworkConnectivity callback:(void (^)(NSString* taskId))callback {
     self = [self init];
     
     if (self) {
         _identifier = identifier;
         _delay = delay;
         _periodic = periodic;
+        _requiresExternalPower = requiresExternalPower;
+        _requiresNetworkConnectivity = requiresNetworkConnectivity;
         [TSBGTask add:self];
     }
     return self;
@@ -127,6 +129,8 @@ static NSMutableArray *_tasks;
         _delay = [[config objectForKey:@"delay"] longValue];
         _periodic = [[config objectForKey:@"periodic"] boolValue];
         _enabled = [[config objectForKey:@"enabled"] boolValue];
+        _requiresExternalPower = [[config objectForKey:@"_requiresExternalPower"] boolValue];
+        _requiresNetworkConnectivity = [[config objectForKey:@"_requiresNetworkConnectivity"] boolValue];
     }
     return self;
 }
@@ -146,9 +150,8 @@ static NSMutableArray *_tasks;
         }
         
         BGProcessingTaskRequest *request = [[BGProcessingTaskRequest alloc] initWithIdentifier:_identifier];
-        // TODO Configurable.
-        request.requiresExternalPower = NO;
-        request.requiresNetworkConnectivity = NO;
+        request.requiresExternalPower = _requiresExternalPower;
+        request.requiresNetworkConnectivity = _requiresNetworkConnectivity;
         request.earliestBeginDate = [NSDate dateWithTimeIntervalSinceNow:_delay];
         
         NSError *error = nil;
@@ -258,12 +261,14 @@ static NSMutableArray *_tasks;
         @"identifier": _identifier,
         @"delay": @(_delay),
         @"periodic": @(_periodic),
-        @"enabled": @(_enabled)
+        @"enabled": @(_enabled),
+        @"requiresExternalPower": @(_requiresExternalPower),
+        @"requiresNetworkConnectivity": @(_requiresNetworkConnectivity)
     };
 }
 
 -(NSString*) description {
-    return [NSString stringWithFormat:@"<TSBGTask identifier=%@, delay=%ld, periodic=%d enabled=%d>", _identifier, (long)_delay, _periodic, _enabled];
+    return [NSString stringWithFormat:@"<TSBGTask identifier=%@, delay=%ld, periodic=%d enabled=%d requiresExternalPower=%d requiresNetworkConnectivity=%d>", _identifier, (long)_delay, _periodic, _enabled, _requiresExternalPower, _requiresNetworkConnectivity];
 }
 
 @end
