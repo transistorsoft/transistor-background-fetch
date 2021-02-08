@@ -11,14 +11,21 @@ import android.os.Build;
 import android.os.PersistableBundle;
 import android.util.Log;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class BGTask {
+    static int MAX_TIME = 60000;
+
     private static final List<BGTask> mTasks = new ArrayList<>();
 
     static BGTask getTask(String taskId) {
@@ -60,14 +67,24 @@ public class BGTask {
     private FetchJobService.CompletionHandler mCompletionHandler;
     private String mTaskId;
     private int mJobId;
+    private Runnable mTimeoutTask;
+    private boolean mTimedout = false;
 
-    BGTask(String taskId, FetchJobService.CompletionHandler handler, int jobId) {
+    BGTask(final Context context, String taskId, FetchJobService.CompletionHandler handler, int jobId) {
         mTaskId = taskId;
         mCompletionHandler = handler;
         mJobId = jobId;
+
+        mTimeoutTask = new Runnable() {
+            @Override public void run() {
+                onTimeout(context);
+            }
+        };
+        BackgroundFetch.getUiHandler().postDelayed(mTimeoutTask, MAX_TIME);
     }
 
-    String getTaskId() { return mTaskId; }
+    public String getTaskId() { return mTaskId; }
+
     int getJobId() { return mJobId; }
 
     boolean hasTaskId(String taskId) {
@@ -81,6 +98,9 @@ public class BGTask {
     void finish() {
         if (mCompletionHandler != null) {
             mCompletionHandler.finish();
+        }
+        if (mTimeoutTask != null) {
+            BackgroundFetch.getUiHandler().removeCallbacks(mTimeoutTask);
         }
         mCompletionHandler = null;
         removeTask(mTaskId);
@@ -142,6 +162,32 @@ public class BGTask {
         }
     }
 
+    void onTimeout(Context context) {
+        mTimedout = true;
+        Log.d(BackgroundFetch.TAG, "[BGTask] timeout: " + mTaskId);
+
+        BackgroundFetch adapter = BackgroundFetch.getInstance(context);
+
+        if (adapter.isMainActivityActive()) {
+            BackgroundFetch.Callback callback = adapter.getFetchCallback();
+            if (callback != null) {
+                callback.onTimeout(mTaskId);
+            }
+        } else {
+            BackgroundFetchConfig config = adapter.getConfig(mTaskId);
+            if (config != null) {
+                if (config.getJobService() != null) {
+                    fireHeadlessEvent(context, config);
+                } else {
+                    adapter.finish(mTaskId);
+                }
+            } else {
+                Log.e(BackgroundFetch.TAG, "[BGTask] failed to load config for taskId: " + mTaskId);
+                adapter.finish(mTaskId);
+            }
+        }
+    }
+
     // Fire a headless background-fetch event by reflecting an instance of Config.jobServiceClass.
     // Will attempt to reflect upon two different forms of Headless class:
     // 1:  new HeadlessTask(context, taskId)
@@ -152,8 +198,8 @@ public class BGTask {
         try {
             // Get class via reflection.
             Class<?> HeadlessClass = Class.forName(config.getJobService());
-            Class[] types = { Context.class, String.class };
-            Object[] params = { context, config.getTaskId()};
+            Class[] types = { Context.class, BGTask.class };
+            Object[] params = { context, this};
             try {
                 // 1:  new HeadlessTask(context, taskId);
                 Constructor<?> constructor = HeadlessClass.getDeclaredConstructor(types);
@@ -201,6 +247,24 @@ public class BGTask {
 
     public String toString() {
         return "[BGTask taskId=" + mTaskId + "]";
+    }
+
+    public Map<String, Object> toMap() {
+        Map<String, Object> map = new HashMap<>();
+        map.put("taskId", mTaskId);
+        map.put("timeout", mTimedout);
+        return map;
+    }
+
+    public JSONObject toJson() {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("taskId", mTaskId);
+            json.put("timeout", mTimedout);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return json;
     }
 
     static class Error extends RuntimeException {

@@ -13,14 +13,17 @@ import static android.content.Context.POWER_SERVICE;
  */
 
 public class FetchAlarmReceiver extends BroadcastReceiver {
-    @Override
-    public void onReceive(Context context, Intent intent) {
 
+    @Override
+    public void onReceive(final Context context, Intent intent) {
         PowerManager powerManager = (PowerManager) context.getSystemService(POWER_SERVICE);
         final PowerManager.WakeLock wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, BackgroundFetch.TAG + "::" + intent.getAction());
-        wakeLock.acquire(60000);
+        // WakeLock expires in MAX_TIME + 4s buffer.
+        wakeLock.acquire((BGTask.MAX_TIME + 4000));
 
-        FetchJobService.CompletionHandler completionHandler = new FetchJobService.CompletionHandler() {
+        final String taskId = intent.getAction();
+
+        final FetchJobService.CompletionHandler completionHandler = new FetchJobService.CompletionHandler() {
             @Override
             public void finish() {
                 if (wakeLock.isHeld()) {
@@ -30,7 +33,8 @@ public class FetchAlarmReceiver extends BroadcastReceiver {
             }
         };
 
-        BGTask task = new BGTask(intent.getAction(), completionHandler, 0);
+        BGTask task = new BGTask(context, taskId, completionHandler, 0);
+
         BackgroundFetch.getInstance(context.getApplicationContext()).onFetch(task);
     }
 }

@@ -23,7 +23,7 @@ public class FetchJobService extends JobService {
                 jobFinished(params, false);
             }
         };
-        BGTask task = new BGTask(taskId, completionHandler, params.getJobId());
+        BGTask task = new BGTask(this, taskId, completionHandler, params.getJobId());
         BackgroundFetch.getInstance(getApplicationContext()).onFetch(task);
 
         return true;
@@ -32,6 +32,14 @@ public class FetchJobService extends JobService {
     @Override
     public boolean onStopJob(final JobParameters params) {
         Log.d(BackgroundFetch.TAG, "- onStopJob");
+
+        PersistableBundle extras = params.getExtras();
+        final String taskId = extras.getString(BackgroundFetchConfig.FIELD_TASK_ID);
+
+        BGTask task = BGTask.getTask(taskId);
+        if (task != null) {
+            task.onTimeout(getApplicationContext());
+        }
         jobFinished(params, false);
         return true;
     }
