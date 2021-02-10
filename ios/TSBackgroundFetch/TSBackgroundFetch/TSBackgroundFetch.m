@@ -128,8 +128,9 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
 }
 
 -(void) setMinimumFetchInterval {
+    __block NSTimeInterval interval = minimumFetchInterval;
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:minimumFetchInterval];
+        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:interval];
     });
 }
 
@@ -158,10 +159,10 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     fetchScheduled = NO;
     [self scheduleBGAppRefresh];
     
-    completionHandler = handler;
+    __block void (^completionHandler)(UIBackgroundFetchResult) = handler;
     if (backgroundTask != UIBackgroundTaskInvalid) [[UIApplication sharedApplication] endBackgroundTask:backgroundTask];
     // Create a UIBackgroundTask for detecting task-expiration with old API.
-    backgroundTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
+    __block UIBackgroundTaskIdentifier backgroundTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
         if (completionHandler) {
             [TSBGAppRefreshSubscriber onTimeout];
         }

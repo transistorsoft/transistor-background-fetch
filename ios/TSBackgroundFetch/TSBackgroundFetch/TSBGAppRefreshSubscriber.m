@@ -131,7 +131,7 @@ static BOOL _hasRegisteredTaskScheduler   = NO;
     _executed = YES;
     _finished = NO;
     dispatch_async(dispatch_get_main_queue(), ^(void) {
-        _callback(_identifier);
+        self.callback(self.identifier);
     });
 }
 
@@ -142,7 +142,7 @@ static BOOL _hasRegisteredTaskScheduler   = NO;
     }
     if (!_finished) {
         dispatch_async(dispatch_get_main_queue(), ^(void) {
-            _timeout(_identifier);
+            self.timeout(self.identifier);
         });
     }
 }

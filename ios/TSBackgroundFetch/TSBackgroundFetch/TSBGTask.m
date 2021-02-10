@@ -198,7 +198,7 @@ static NSMutableArray *_tasks;
     _task = task;
     
     task.expirationHandler = ^{
-        NSLog(@"[%@ expirationHandler] WARNING: %@ '%@' expired before #finish was executed.", TAG, NSStringFromClass([_task class]), _identifier);
+        NSLog(@"[%@ expirationHandler] WARNING: %@ '%@' expired before #finish was executed.", TAG, NSStringFromClass([self.task class]), self.identifier);
         [self onTimeout];
         // TODO Disabled with onTimeout implementation.
         //[self finish:NO];
