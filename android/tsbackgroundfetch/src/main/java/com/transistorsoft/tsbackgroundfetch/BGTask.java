@@ -83,6 +83,10 @@ public class BGTask {
         BackgroundFetch.getUiHandler().postDelayed(mTimeoutTask, MAX_TIME);
     }
 
+    public boolean getTimedOut() {
+        return mTimedout;
+    }
+
     public String getTaskId() { return mTaskId; }
 
     int getJobId() { return mJobId; }

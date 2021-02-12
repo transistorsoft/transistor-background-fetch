@@ -19,9 +19,7 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     BOOL enabled;
     
     NSTimeInterval minimumFetchInterval;
-    UIBackgroundTaskIdentifier backgroundTask;
-    id bgAppRefreshTask;
-    void (^completionHandler)(UIBackgroundFetchResult);
+    id bgAppRefreshTask;    
     BOOL fetchScheduled;
 }
 
@@ -43,7 +41,6 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
         
     fetchScheduled = NO;
     minimumFetchInterval = UIApplicationBackgroundFetchIntervalMinimum;
-    backgroundTask = UIBackgroundTaskInvalid;
     
     _fetchTaskId = BACKGROUND_REFRESH_TASK_ID;
     _stopOnTerminate = YES;
@@ -159,18 +156,19 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     fetchScheduled = NO;
     [self scheduleBGAppRefresh];
     
-    __block void (^completionHandler)(UIBackgroundFetchResult) = handler;
-    if (backgroundTask != UIBackgroundTaskInvalid) [[UIApplication sharedApplication] endBackgroundTask:backgroundTask];
+    _completionHandler = handler;
+    if (_backgroundTask != UIBackgroundTaskInvalid) [[UIApplication sharedApplication] endBackgroundTask:_backgroundTask];
     // Create a UIBackgroundTask for detecting task-expiration with old API.
-    __block UIBackgroundTaskIdentifier backgroundTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
-        if (completionHandler) {
+    _backgroundTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
+        if (self.completionHandler) {
             [TSBGAppRefreshSubscriber onTimeout];
         }
         @synchronized (self) {
-            [[UIApplication sharedApplication] endBackgroundTask:backgroundTask];
-            backgroundTask = UIBackgroundTaskInvalid;
+            [[UIApplication sharedApplication] endBackgroundTask:self.backgroundTask];
+            self.backgroundTask = UIBackgroundTaskInvalid;
         }
     }];
+    
     [TSBGAppRefreshSubscriber execute];
 }
 
@@ -243,7 +241,7 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     } else {
         subscriber = [[TSBGAppRefreshSubscriber alloc] initWithIdentifier:componentName callback:callback timeout:timeout];
     }
-    if (bgAppRefreshTask || completionHandler) {
+    if (bgAppRefreshTask || _completionHandler) {
         [subscriber execute];
     }
 }
@@ -310,7 +308,7 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     }
     
     // Nope, it's a background-fetch event.  We have to do subscriber-counting:  when all subscribers have signalled #finish, we're done.
-    if (!bgAppRefreshTask && !completionHandler) {
+    if (!bgAppRefreshTask && !_completionHandler) {
         NSLog(@"[%@ finish] %@ Called without a task to finish.  Ignoring.", TAG, taskId);
         return;
     }
@@ -330,7 +328,7 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
         NSLog(@"[%@ finish] %@ (%ld of %ld)", TAG, subscriber.identifier, count, total);
 
         if (total != count) return;
-
+        
         // If we arrive here without jumping out of foreach above, all subscribers are finished.
         if (bgAppRefreshTask) {
             // If we arrive here, all Fetch tasks must be finished.
@@ -338,13 +336,13 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
                 [(BGAppRefreshTask*) bgAppRefreshTask setTaskCompletedWithSuccess:YES];
             }
             bgAppRefreshTask = nil;
-        } else if (completionHandler) {
-            completionHandler(UIBackgroundFetchResultNewData);
-            completionHandler = nil;
+        } else if (_completionHandler) {
+            _completionHandler(UIBackgroundFetchResultNewData);
+            _completionHandler = nil;
             @synchronized (self) {
-                if (backgroundTask != UIBackgroundTaskInvalid) {
-                    [[UIApplication sharedApplication] endBackgroundTask:backgroundTask];
-                    backgroundTask = UIBackgroundTaskInvalid;
+                if (_backgroundTask != UIBackgroundTaskInvalid) {
+                    [[UIApplication sharedApplication] endBackgroundTask:_backgroundTask];
+                    _backgroundTask = UIBackgroundTaskInvalid;
                 }
             }
         }

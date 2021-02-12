@@ -16,6 +16,8 @@
 @property (readonly) BOOL configured;
 @property (readonly) BOOL active;
 @property (readonly) NSString *fetchTaskId;
+@property (copy) void (^completionHandler)(UIBackgroundFetchResult);
+@property (nonatomic) UIBackgroundTaskIdentifier backgroundTask;
 
 + (TSBackgroundFetch *)sharedInstance;
 
