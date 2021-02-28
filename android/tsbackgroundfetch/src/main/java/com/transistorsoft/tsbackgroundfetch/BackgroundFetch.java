@@ -176,16 +176,18 @@ public class BackgroundFetch {
     @SuppressWarnings({"WeakerAccess"})
     public void finish(String taskId) {
         Log.d(TAG, "- " + ACTION_FINISH + ": " + taskId);
+
         BGTask task = BGTask.getTask(taskId);
         if (task != null) {
             task.finish();
         }
-        BackgroundFetchConfig config = getConfig(task.getTaskId());
+
+        BackgroundFetchConfig config = getConfig(taskId);
 
         if ((config != null) && !config.getPeriodic()) {
             config.destroy(mContext);
             synchronized (mConfig) {
-                mConfig.remove(task.getTaskId());
+                mConfig.remove(taskId);
             }
         }
     }
