@@ -9,6 +9,7 @@
 #import <Foundation/Foundation.h>
 
 #import "TSBGAppRefreshSubscriber.h"
+#import "TSBackgroundFetch.h"
 
 static NSString *const TAG = @"TSBGAppRefreshSubscriber";
 
@@ -76,6 +77,23 @@ static BOOL _hasRegisteredTaskScheduler   = NO;
     }
 }
 
++(BOOL) onTimeout {
+    BOOL foundTimeoutHandler = NO;
+    NSArray *subscribers = [[self subscribers] allValues];
+    for (TSBGAppRefreshSubscriber *subscriber in subscribers) {
+        foundTimeoutHandler = YES;
+        if (subscriber.timeout) {
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                [subscriber onTimeout];
+            });
+        } else {
+            [[TSBackgroundFetch sharedInstance] finish:subscriber.identifier];
+        }
+    }
+    return foundTimeoutHandler;
+}
+
+
 -(instancetype)init {
     self = [super init];
     _enabled = YES;
@@ -92,11 +110,12 @@ static BOOL _hasRegisteredTaskScheduler   = NO;
     return self;
 }
 
--(instancetype) initWithIdentifier:(NSString*)identifier callback:(void (^)(NSString* taskId))callback {
+-(instancetype) initWithIdentifier:(NSString*)identifier callback:(void (^)(NSString* taskId))callback timeout:(void (^)(NSString* taskId))timeout {
     self = [self init];
     if (self) {
         _identifier = identifier;
         _callback = callback;
+        _timeout = timeout;
         [self save];
         @synchronized (_subscribers) {
             [_subscribers setObject:self forKey:identifier];
@@ -112,8 +131,20 @@ static BOOL _hasRegisteredTaskScheduler   = NO;
     _executed = YES;
     _finished = NO;
     dispatch_async(dispatch_get_main_queue(), ^(void) {
-        _callback(_identifier);
+        self.callback(self.identifier);
     });
+}
+
+-(void) onTimeout {
+    if (!_timeout) {
+        [self finish];
+        return;
+    }
+    if (!_finished) {
+        dispatch_async(dispatch_get_main_queue(), ^(void) {
+            self.timeout(self.identifier);
+        });
+    }
 }
 
 -(void) finish {

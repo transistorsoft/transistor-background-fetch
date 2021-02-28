@@ -19,9 +19,7 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     BOOL enabled;
     
     NSTimeInterval minimumFetchInterval;
-        
-    id bgAppRefreshTask;
-    void (^completionHandler)(UIBackgroundFetchResult);
+    id bgAppRefreshTask;    
     BOOL fetchScheduled;
 }
 
@@ -42,7 +40,6 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     self = [super init];
         
     fetchScheduled = NO;
-
     minimumFetchInterval = UIApplicationBackgroundFetchIntervalMinimum;
     
     _fetchTaskId = BACKGROUND_REFRESH_TASK_ID;
@@ -95,7 +92,14 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
             BGTaskScheduler *scheduler = [BGTaskScheduler sharedScheduler];
             BGAppRefreshTaskRequest *request = [[BGAppRefreshTaskRequest alloc] initWithIdentifier:BACKGROUND_REFRESH_TASK_ID];
             request.earliestBeginDate = [NSDate dateWithTimeIntervalSinceNow:minimumFetchInterval];
+            
             [scheduler submitTaskRequest:request error:&error];
+            // Handle case for Simulator where BGTaskScheduler doesn't work.
+            if ((error != nil) && (error.code == BGTaskSchedulerErrorCodeUnavailable)) {
+                NSLog(@"[%@] BGTaskScheduler failed to register fetch-task and will fall-back to old API.  This is likely due to running in the iOS Simulator (%@)", TAG, error);
+                [self setMinimumFetchInterval];
+                error = nil;
+            }
         } else {
             [self setMinimumFetchInterval];
         }
@@ -121,8 +125,9 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
 }
 
 -(void) setMinimumFetchInterval {
+    __block NSTimeInterval interval = minimumFetchInterval;
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:minimumFetchInterval];
+        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:interval];
     });
 }
 
@@ -133,7 +138,8 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     __block BGAppRefreshTask *weakTask = task;
     task.expirationHandler = ^{
         NSLog(@"[%@ handleBGAppRefreshTask] WARNING: expired before #finish was executed.", TAG);
-        if (weakTask) [weakTask setTaskCompletedWithSuccess:NO];
+        // If any registered listeners has registered an onTimeout callback, let them run and execute #finish as desired.  Otherwise, automatically setTaskCompleted immediately.
+        if (![TSBGAppRefreshSubscriber onTimeout] && weakTask) [weakTask setTaskCompletedWithSuccess:NO];
     };
     
     fetchScheduled = NO;
@@ -150,7 +156,19 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     fetchScheduled = NO;
     [self scheduleBGAppRefresh];
     
-    completionHandler = handler;
+    _completionHandler = handler;
+    if (_backgroundTask != UIBackgroundTaskInvalid) [[UIApplication sharedApplication] endBackgroundTask:_backgroundTask];
+    // Create a UIBackgroundTask for detecting task-expiration with old API.
+    _backgroundTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
+        if (self.completionHandler) {
+            [TSBGAppRefreshSubscriber onTimeout];
+        }
+        @synchronized (self) {
+            [[UIApplication sharedApplication] endBackgroundTask:self.backgroundTask];
+            self.backgroundTask = UIBackgroundTaskInvalid;
+        }
+    }];
+    
     [TSBGAppRefreshSubscriber execute];
 }
 
@@ -172,12 +190,19 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     }];
 }
 
--(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic callback:(void (^)(NSString* taskId))callback {
+-(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic callback:(void (^)(NSString* taskId, BOOL timeout))callback {
+    return [self scheduleProcessingTaskWithIdentifier:identifier delay:delay periodic:periodic requiresExternalPower:NO requiresNetworkConnectivity:NO callback:callback];
+}
+
+-(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic requiresExternalPower:(BOOL)requiresExternalPower requiresNetworkConnectivity:(BOOL)requiresNetworkConnectivity callback:(void (^)(NSString* taskId, BOOL timeout))callback {
+    
     TSBGTask *tsTask = [TSBGTask get:identifier];
     if (tsTask) {
         tsTask.delay = delay;
         tsTask.periodic = periodic;
         tsTask.callback = callback;
+        tsTask.requiresNetworkConnectivity = requiresNetworkConnectivity;
+        tsTask.requiresExternalPower = requiresExternalPower;
         if (@available(iOS 13.0, *)) {
             if (tsTask.task && !tsTask.executed) {
                 [tsTask execute];
@@ -187,7 +212,12 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
             }
         }
     } else {
-        tsTask = [[TSBGTask alloc] initWithIdentifier:identifier delay:delay periodic:periodic callback:callback];
+        tsTask = [[TSBGTask alloc] initWithIdentifier:identifier
+                                                delay:delay
+                                             periodic:periodic
+                                requiresExternalPower:requiresExternalPower
+                          requiresNetworkConnectivity:requiresNetworkConnectivity
+                                             callback:callback];
         tsTask.callback = callback;
     }
     
@@ -198,14 +228,20 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     return error;
 }
 
+/// @deprecated.
 -(void) addListener:(NSString*)componentName callback:(void (^)(NSString* componentName))callback {
+    [self addListener:componentName callback:callback timeout:nil];
+}
+
+-(void) addListener:(NSString*)componentName callback:(void (^)(NSString* componentName))callback timeout:(void (^)(NSString* componentName))timeout {
     TSBGAppRefreshSubscriber *subscriber = [TSBGAppRefreshSubscriber get:componentName];
     if (subscriber) {
         subscriber.callback = callback;
+        subscriber.timeout = timeout;
     } else {
-        subscriber = [[TSBGAppRefreshSubscriber alloc] initWithIdentifier:componentName callback:callback];
+        subscriber = [[TSBGAppRefreshSubscriber alloc] initWithIdentifier:componentName callback:callback timeout:timeout];
     }
-    if (bgAppRefreshTask || completionHandler) {
+    if (bgAppRefreshTask || _completionHandler) {
         [subscriber execute];
     }
 }
@@ -262,14 +298,17 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     if (!taskId) { taskId = BACKGROUND_REFRESH_TASK_ID; }
 
     TSBGTask *tsTask = [TSBGTask get:taskId];
+    // Is it a scheduled-task?
     if (tsTask) {
         if (@available(iOS 13.0, *)) {
             [tsTask finish:YES];
         }
+        // We're done.
         return;
     }
     
-    if (!bgAppRefreshTask && !completionHandler) {
+    // Nope, it's a background-fetch event.  We have to do subscriber-counting:  when all subscribers have signalled #finish, we're done.
+    if (!bgAppRefreshTask && !_completionHandler) {
         NSLog(@"[%@ finish] %@ Called without a task to finish.  Ignoring.", TAG, taskId);
         return;
     }
@@ -289,7 +328,7 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
         NSLog(@"[%@ finish] %@ (%ld of %ld)", TAG, subscriber.identifier, count, total);
 
         if (total != count) return;
-
+        
         // If we arrive here without jumping out of foreach above, all subscribers are finished.
         if (bgAppRefreshTask) {
             // If we arrive here, all Fetch tasks must be finished.
@@ -297,9 +336,15 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
                 [(BGAppRefreshTask*) bgAppRefreshTask setTaskCompletedWithSuccess:YES];
             }
             bgAppRefreshTask = nil;
-        } else if (completionHandler) {
-            completionHandler(UIBackgroundFetchResultNewData);
-            completionHandler = nil;
+        } else if (_completionHandler) {
+            _completionHandler(UIBackgroundFetchResultNewData);
+            _completionHandler = nil;
+            @synchronized (self) {
+                if (_backgroundTask != UIBackgroundTaskInvalid) {
+                    [[UIApplication sharedApplication] endBackgroundTask:_backgroundTask];
+                    _backgroundTask = UIBackgroundTaskInvalid;
+                }
+            }
         }
     } else {
         NSLog(@"[%@ finish] Failed to find Fetch subscriber %@", TAG, taskId);

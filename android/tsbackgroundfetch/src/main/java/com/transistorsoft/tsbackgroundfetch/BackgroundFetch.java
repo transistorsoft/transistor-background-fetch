@@ -70,7 +70,7 @@ public class BackgroundFetch {
     }
 
     private Context mContext;
-    private BackgroundFetch.Callback mCallback;
+    private BackgroundFetch.Callback mFetchCallback;
 
     private final Map<String, BackgroundFetchConfig> mConfig = new HashMap<>();
 
@@ -81,7 +81,7 @@ public class BackgroundFetch {
     @SuppressWarnings({"unused"})
     public void configure(BackgroundFetchConfig config, BackgroundFetch.Callback callback) {
         Log.d(TAG, "- " + ACTION_CONFIGURE);
-        mCallback = callback;
+        mFetchCallback = callback;
 
         synchronized (mConfig) {
             mConfig.put(config.getTaskId(), config);
@@ -176,9 +176,19 @@ public class BackgroundFetch {
     @SuppressWarnings({"WeakerAccess"})
     public void finish(String taskId) {
         Log.d(TAG, "- " + ACTION_FINISH + ": " + taskId);
+
         BGTask task = BGTask.getTask(taskId);
         if (task != null) {
             task.finish();
+        }
+
+        BackgroundFetchConfig config = getConfig(taskId);
+
+        if ((config != null) && !config.getPeriodic()) {
+            config.destroy(mContext);
+            synchronized (mConfig) {
+                mConfig.remove(taskId);
+            }
         }
     }
 
@@ -186,9 +196,13 @@ public class BackgroundFetch {
         return STATUS_AVAILABLE;
     }
 
+    BackgroundFetch.Callback getFetchCallback() {
+        return mFetchCallback;
+    }
+
     void onFetch(final BGTask task) {
         BGTask.addTask(task);
-        Log.d(TAG, "- Background Fetch event received");
+        Log.d(TAG, "- Background Fetch event received: " + task.getTaskId());
         synchronized (mConfig) {
             if (mConfig.isEmpty()) {
                 BackgroundFetchConfig.load(mContext, new BackgroundFetchConfig.OnLoadCallback() {
@@ -232,8 +246,8 @@ public class BackgroundFetch {
         }
 
         if (isMainActivityActive()) {
-            if (mCallback != null) {
-                mCallback.onFetch(task.getTaskId());
+            if (mFetchCallback != null) {
+                mFetchCallback.onFetch(task.getTaskId());
             }
         } else if (config.getStopOnTerminate()) {
             Log.d(TAG, "- Stopping on terminate");
@@ -251,19 +265,13 @@ public class BackgroundFetch {
             finish(task.getTaskId());
             stop(task.getTaskId());
         }
-        if (!config.getPeriodic()) {
-            config.destroy(mContext);
-            synchronized (mConfig) {
-                mConfig.remove(task.getTaskId());
-            }
-        }
     }
 
     @SuppressWarnings({"WeakerAccess", "deprecation"})
     public Boolean isMainActivityActive() {
         Boolean isActive = false;
 
-        if (mContext == null || mCallback == null) {
+        if (mContext == null || mFetchCallback == null) {
             return false;
         }
         ActivityManager activityManager = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
@@ -282,7 +290,7 @@ public class BackgroundFetch {
         return isActive;
     }
 
-    private BackgroundFetchConfig getConfig(String taskId) {
+    BackgroundFetchConfig getConfig(String taskId) {
         synchronized (mConfig) {
             return (mConfig.containsKey(taskId)) ? mConfig.get(taskId) : null;
         }
@@ -293,5 +301,6 @@ public class BackgroundFetch {
      */
     public interface Callback {
         void onFetch(String taskId);
+        void onTimeout(String taskId);
     }
 }
