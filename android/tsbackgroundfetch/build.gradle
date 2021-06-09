@@ -52,6 +52,7 @@ task buildRelease { task ->
     task.dependsOn 'reactNativeRelease'
     task.dependsOn 'nativeScriptRelease'
     task.dependsOn 'flutterRelease'
+    task.dependsOn 'capacitorRelease'
 }
 
 // Publish Release.
@@ -127,6 +128,19 @@ task flutterRelease { task ->
             //from("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
             //into("$flutterDir/android/libs")
             //rename(/(.*)-release/, '$1-' + VERSION_NAME)
+        }
+    }
+}
+
+def capacitorDir = "$WORKSPACE_PATH/background-geolocation/capacitor/capacitor-background-fetch"
+task capacitorRelease { task ->
+    task.dependsOn 'buildLocalRepository'
+    doLast {
+        delete "$capacitorDir/android/libs"
+        copy {
+            // Maven repo format.
+            from("$buildDir/repo-local")
+            into("$capacitorDir/android/libs")
         }
     }
 }

@@ -246,7 +246,7 @@ public class BGTask {
     static PendingIntent getAlarmPI(Context context, String taskId) {
         Intent intent = new Intent(context, FetchAlarmReceiver.class);
         intent.setAction(taskId);
-        return PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+        return PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
     }
 
     public String toString() {
