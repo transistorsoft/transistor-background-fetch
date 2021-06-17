@@ -4,6 +4,8 @@ import android.annotation.TargetApi;
 import android.app.ActivityManager;
 
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -84,7 +86,16 @@ public class BackgroundFetch {
         mFetchCallback = callback;
 
         synchronized (mConfig) {
-            mConfig.put(config.getTaskId(), config);
+            if (mConfig.containsKey(config.getTaskId())) {
+                // Developer called `.configure` again.  Re-configure the plugin by re-scheduling the fetch task.
+                BackgroundFetchConfig existing = mConfig.get(config.getTaskId());
+                Log.d(TAG, "Re-configured existing task");
+                BGTask.reschedule(mContext, existing, config);
+                mConfig.put(config.getTaskId(), config);
+                return;
+            } else {
+                mConfig.put(config.getTaskId(), config);
+            }
         }
         start(config.getTaskId());
     }
@@ -274,10 +285,26 @@ public class BackgroundFetch {
         if (mContext == null || mFetchCallback == null) {
             return false;
         }
+        String launchActivityName = "";
+        PackageManager pm = mContext.getPackageManager();
+        Intent launchIntent = pm.getLaunchIntentForPackage(mContext.getPackageName());
+        if (launchIntent != null) {
+            if (launchIntent.getComponent() != null) {
+                launchActivityName = launchIntent.getComponent().getClassName();
+            } else {
+                Log.w(TAG, "launchIntent.getComponent() is null");
+            }
+        } else {
+            Log.w(TAG, "isMainActivityActive received null from getLaunchIntentForPackage: " + mContext.getPackageName());
+        }
         ActivityManager activityManager = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
         try {
             List<ActivityManager.RunningTaskInfo> tasks = activityManager.getRunningTasks(Integer.MAX_VALUE);
             for (ActivityManager.RunningTaskInfo task : tasks) {
+                if (launchActivityName.equals(task.baseActivity.getClassName())) {
+                    isActive = true;
+                    break;
+                }
                 if (mContext.getPackageName().equalsIgnoreCase(task.baseActivity.getPackageName())) {
                     isActive = true;
                     break;
