@@ -110,6 +110,16 @@ public class BGTask {
         removeTask(mTaskId);
     }
 
+    static void reschedule(Context context, BackgroundFetchConfig existing, BackgroundFetchConfig config) {
+        BGTask existingTask = BGTask.getTask(existing.getTaskId());
+        if (existingTask != null) {
+            existingTask.finish();
+        }
+        cancel(context, existing.getTaskId(), existing.getJobId());
+
+        schedule(context, config);
+    }
+
     static void schedule(Context context, BackgroundFetchConfig config) {
         Log.d(BackgroundFetch.TAG, config.toString());
 
@@ -136,6 +146,8 @@ public class BGTask {
             }
             PersistableBundle extras = new PersistableBundle();
             extras.putString(BackgroundFetchConfig.FIELD_TASK_ID, config.getTaskId());
+            extras.putLong("scheduled_at", System.currentTimeMillis());
+
             builder.setExtras(extras);
 
             if (android.os.Build.VERSION.SDK_INT >= 26) {
