@@ -81,7 +81,7 @@ task buildLocalRepository { task ->
     }
 }
 
-def cordovaDir = "$WORKSPACE_PATH/cordova/background-geolocation/cordova-plugin-background-fetch"
+def cordovaDir = "$WORKSPACE_PATH/background-geolocation/cordova/cordova-plugin-background-fetch"
 task cordovaRelease { task ->
     task.dependsOn 'buildLocalRepository'
     doLast {
@@ -98,7 +98,7 @@ task cordovaRelease { task ->
     }
 }
 
-def reactNativeDir = "$WORKSPACE_PATH/react/background-geolocation/react-native-background-fetch"
+def reactNativeDir = "$WORKSPACE_PATH/background-geolocation/react/react-native-background-fetch"
 task reactNativeRelease { task ->
     task.dependsOn 'buildLocalRepository'
     doLast {
