@@ -3,7 +3,7 @@
 buildscript {
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 
     dependencies {
@@ -18,7 +18,7 @@ buildscript {
 allprojects {
     repositories {
         google()
-        jcenter()
+        mavenCentral()
     }
 }
 
@@ -27,8 +27,8 @@ task clean(type: Delete) {
 }
 
 ext {
-    compileSdkVersion   = 31
+    compileSdkVersion   = 32
     targetSdkVersion    = 31
     buildToolsVersion   = "29.0.6"
-    appCompatVersion   = "1.1.0"
+    appCompatVersion   = "1.4.1"
 }

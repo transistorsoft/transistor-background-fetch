@@ -62,7 +62,7 @@ task publishRelease { task ->
 tasks["publishRelease"].mustRunAfter("assembleRelease")
 tasks["publishRelease"].finalizedBy("publish")
 
-def WORKSPACE_PATH = "/Volumes/Glyph2TB/Users/chris/workspace"
+def WORKSPACE_PATH = "/Users/chris/workspace"
 
 // Build local maven repo.
 def LIBRARY_PATH = "com/transistorsoft/tsbackgroundfetch"
