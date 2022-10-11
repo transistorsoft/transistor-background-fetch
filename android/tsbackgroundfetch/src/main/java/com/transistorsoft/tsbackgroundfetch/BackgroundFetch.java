@@ -78,6 +78,8 @@ public class BackgroundFetch {
 
     private BackgroundFetch(Context context) {
         mContext = context;
+        // Start Lifecycle Observer to be notified when app enters background.
+        getUiHandler().post(LifecycleManager.getInstance());
     }
 
     @SuppressWarnings({"unused"})
@@ -256,7 +258,7 @@ public class BackgroundFetch {
             return;
         }
 
-        if (isMainActivityActive()) {
+        if (!LifecycleManager.getInstance().isHeadless()) {
             if (mFetchCallback != null) {
                 mFetchCallback.onFetch(task.getTaskId());
             }
@@ -276,45 +278,6 @@ public class BackgroundFetch {
             finish(task.getTaskId());
             stop(task.getTaskId());
         }
-    }
-
-    @SuppressWarnings({"WeakerAccess", "deprecation"})
-    public Boolean isMainActivityActive() {
-        Boolean isActive = false;
-
-        if (mContext == null || mFetchCallback == null) {
-            return false;
-        }
-        String launchActivityName = "";
-        PackageManager pm = mContext.getPackageManager();
-        Intent launchIntent = pm.getLaunchIntentForPackage(mContext.getPackageName());
-        if (launchIntent != null) {
-            if (launchIntent.getComponent() != null) {
-                launchActivityName = launchIntent.getComponent().getClassName();
-            } else {
-                Log.w(TAG, "launchIntent.getComponent() is null");
-            }
-        } else {
-            Log.w(TAG, "isMainActivityActive received null from getLaunchIntentForPackage: " + mContext.getPackageName());
-        }
-        ActivityManager activityManager = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
-        try {
-            List<ActivityManager.RunningTaskInfo> tasks = activityManager.getRunningTasks(Integer.MAX_VALUE);
-            for (ActivityManager.RunningTaskInfo task : tasks) {
-                if (launchActivityName.equals(task.baseActivity.getClassName())) {
-                    isActive = true;
-                    break;
-                }
-                if (mContext.getPackageName().equalsIgnoreCase(task.baseActivity.getPackageName())) {
-                    isActive = true;
-                    break;
-                }
-            }
-        } catch (java.lang.SecurityException e) {
-            Log.w(TAG, "TSBackgroundFetch attempted to determine if MainActivity is active but was stopped due to a missing permission.  Please add the permission 'android.permission.GET_TASKS' to your AndroidManifest.  See Installation steps for more information");
-            throw e;
-        }
-        return isActive;
     }
 
     BackgroundFetchConfig getConfig(String taskId) {
