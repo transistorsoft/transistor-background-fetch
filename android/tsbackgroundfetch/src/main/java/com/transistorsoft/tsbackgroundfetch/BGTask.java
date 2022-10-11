@@ -184,7 +184,7 @@ public class BGTask {
 
         BackgroundFetch adapter = BackgroundFetch.getInstance(context);
 
-        if (adapter.isMainActivityActive()) {
+        if (!LifecycleManager.getInstance().isHeadless()) {
             BackgroundFetch.Callback callback = adapter.getFetchCallback();
             if (callback != null) {
                 callback.onTimeout(mTaskId);

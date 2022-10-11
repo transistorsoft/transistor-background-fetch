@@ -34,6 +34,10 @@ android {
             }
         }
     }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
 }
 
 dependencies {
@@ -42,6 +46,8 @@ dependencies {
 
     implementation fileTree(dir: 'libs', include: ['*.jar'])
 
+    implementation "androidx.lifecycle:lifecycle-runtime:2.5.1"
+    implementation "androidx.lifecycle:lifecycle-extensions:2.2.0"
     //implementation "androidx.appcompat:appcompat:$rootProject.appCompatVersion"
 
 }
