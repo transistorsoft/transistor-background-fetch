@@ -237,8 +237,6 @@ public class BackgroundFetch {
     }
 
     private void registerTask(String taskId) {
-        Log.d(TAG, "- registerTask: " + taskId);
-
         BackgroundFetchConfig config = getConfig(taskId);
 
         if (config == null) {
@@ -246,6 +244,12 @@ public class BackgroundFetch {
             return;
         }
         config.save(mContext);
+
+        String msg = "- registerTask: " + taskId;
+        if (!config.getForceAlarmManager()) {
+            msg += " (jobId: " + config.getJobId() + ")";
+        }
+        Log.d(TAG, msg);
 
         BGTask.schedule(mContext, config);
     }
