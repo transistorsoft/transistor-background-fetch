@@ -1,1 +1,1 @@
-include ':app', ':tsbackgroundfetch'
+include ':tsbackgroundfetch'
