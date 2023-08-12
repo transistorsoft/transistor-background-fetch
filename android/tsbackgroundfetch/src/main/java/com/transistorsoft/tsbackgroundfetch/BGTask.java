@@ -1,5 +1,6 @@
 package com.transistorsoft.tsbackgroundfetch;
 
+import android.annotation.SuppressLint;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.app.job.JobInfo;
@@ -125,10 +126,11 @@ public class BGTask {
 
         long interval = (config.isFetchTask()) ? (TimeUnit.MINUTES.toMillis(config.getMinimumFetchInterval())) : config.getDelay();
 
-        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && !config.getForceAlarmManager()) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && !config.getForceAlarmManager()) {
             // API 21+ uses new JobScheduler API
 
             JobScheduler jobScheduler = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+            @SuppressLint("WrongConstant")
             JobInfo.Builder builder = new JobInfo.Builder(config.getJobId(), new ComponentName(context, FetchJobService.class))
                     .setRequiredNetworkType(config.getRequiredNetworkType())
                     .setRequiresDeviceIdle(config.getRequiresDeviceIdle())
@@ -136,7 +138,7 @@ public class BGTask {
                     .setPersisted(config.getStartOnBoot() && !config.getStopOnTerminate());
 
             if (config.getPeriodic()) {
-                if (android.os.Build.VERSION.SDK_INT >= 24) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     builder.setPeriodic(interval, interval);
                 } else {
                     builder.setPeriodic(interval);
@@ -150,7 +152,7 @@ public class BGTask {
 
             builder.setExtras(extras);
 
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 builder.setRequiresStorageNotLow(config.getRequiresStorageNotLow());
                 builder.setRequiresBatteryNotLow(config.getRequiresBatteryNotLow());
             }
@@ -166,9 +168,17 @@ public class BGTask {
                 if (config.getPeriodic()) {
                     alarmManager.setRepeating(AlarmManager.RTC_WAKEUP, delay, interval, pi);
                 } else {
-                    if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, delay, pi);
-                    } else if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            if (alarmManager.canScheduleExactAlarms()) {
+                                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, delay, pi);
+                            } else {
+                                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, delay, pi);
+                            }
+                        } else {
+                            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, delay, pi);
+                        }
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                         alarmManager.setExact(AlarmManager.RTC_WAKEUP, delay, pi);
                     } else {
                         alarmManager.set(AlarmManager.RTC_WAKEUP, delay, pi);
@@ -193,7 +203,11 @@ public class BGTask {
             BackgroundFetchConfig config = adapter.getConfig(mTaskId);
             if (config != null) {
                 if (config.getJobService() != null) {
-                    fireHeadlessEvent(context, config);
+                    try {
+                        fireHeadlessEvent(context, config);
+                    } catch (BGTask.Error error) {
+                        Log.e(BackgroundFetch.TAG, "Headless task error: " + error.getMessage());
+                    }
                 } else {
                     adapter.finish(mTaskId);
                 }
