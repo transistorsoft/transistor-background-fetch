@@ -6,13 +6,17 @@ import android.app.job.JobService;
 import android.os.PersistableBundle;
 import android.util.Log;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Created by chris on 2018-01-11.
  */
 @TargetApi(21)
 public class FetchJobService extends JobService {
 
-    private static final LastJob sLastJob = new LastJob();
+    // Queue of recently run jobs.
+    private static final List<ExecutedJob> sExecutedJobs = new ArrayList<>();
 
     @Override
     public boolean onStartJob(final JobParameters params) {
@@ -23,23 +27,29 @@ public class FetchJobService extends JobService {
         if (dt < 1000) {
             // JobScheduler always immediately fires an initial event on Periodic jobs -- We IGNORE these.
             jobFinished(params, false);
-            return true;
+            return false;
         }
 
         final String taskId = extras.getString(BackgroundFetchConfig.FIELD_TASK_ID);
 
         // Is this a duplicate event?
         // JobScheduler has a bug in Android N that causes duplicate Jobs to fire within a few milliseconds.
-        synchronized (sLastJob) {
-            if (sLastJob.isDuplicate(taskId)) {
-                Log.d(BackgroundFetch.TAG, "- Caught duplicate Job " + taskId + ": [IGNORED]");
-                jobFinished(params, false);
-                return true;
-            } else {
-                sLastJob.update(taskId);
+        // We keep a Queue of the last 5 tasks so we can see if this task has executed in the last 5000ms.
+        synchronized (sExecutedJobs) {
+            for (ExecutedJob job : sExecutedJobs) {
+                if (job.isDuplicate(taskId)) {
+                    Log.d(BackgroundFetch.TAG, "- Caught duplicate Job " + taskId + ": [IGNORED]");
+                    jobFinished(params, false);
+                    return false;
+                }
+            }
+            // Not found?  Add this task to the Queue.
+            sExecutedJobs.add(new ExecutedJob(taskId));
+            if (sExecutedJobs.size() > 5) {
+                sExecutedJobs.remove(0);
             }
         }
-
+        // Good to go:  Execute the task.
         CompletionHandler completionHandler = () -> {
             Log.d(BackgroundFetch.TAG, "- jobFinished");
             jobFinished(params, false);
@@ -69,18 +79,19 @@ public class FetchJobService extends JobService {
         void finish();
     }
 
-    private static class LastJob {
-        private static final long OFFSET_TIME = 2000L;
+    private static class ExecutedJob {
+        private static final long OFFSET_TIME = 5000L;
 
-        private String mTaskId = "";
-        private long mTimestamp = 0;
-        void update(String taskId) {
+        private final String mTaskId;
+        private final long mTimestamp;
+
+        ExecutedJob(String taskId) {
             mTaskId = taskId;
             mTimestamp = System.currentTimeMillis();
         }
 
         boolean isDuplicate(String taskId) {
-            if ((mTimestamp == 0) || (!taskId.equalsIgnoreCase(mTaskId))) {
+            if (!taskId.equalsIgnoreCase(mTaskId)) {
                 return false;
             }
             long dt = System.currentTimeMillis() - mTimestamp;
