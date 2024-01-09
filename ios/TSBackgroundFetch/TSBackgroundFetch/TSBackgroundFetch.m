@@ -12,6 +12,7 @@
 
 static NSString *const TAG = @"TSBackgroundFetch";
 
+static NSString *const TRANSISTOR_IDENTIFIER_PREFIX = @"com.transistorsoft";
 static NSString *const BACKGROUND_REFRESH_TASK_ID   = @"com.transistorsoft.fetch";
 static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermittedIdentifiers";
 
@@ -58,11 +59,18 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     for (NSString *identifier in permittedIdentifiers) {
         if ([identifier isEqualToString:BACKGROUND_REFRESH_TASK_ID]) {
             [self registerAppRefreshTask];
-        } else {
+        } else if ([self isTransistorTask:identifier]) {
+            // Only register tasks prefixed with "com.transistorsoft".
             [self registerBGProcessingTask:identifier];
         }
     }
 }
+
+-(BOOL) isTransistorTask:(NSString*)identifier
+{
+    return [identifier rangeOfString:TRANSISTOR_IDENTIFIER_PREFIX].location != NSNotFound;
+}
+
 
 - (void) registerAppRefreshTask {
     if (@available(iOS 13.0, *)) {
