@@ -27,6 +27,7 @@
 		835318351D5220A3005738CD /* TSBackgroundFetchTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 835318341D5220A3005738CD /* TSBackgroundFetchTests.m */; };
 		835318411D5220F6005738CD /* TSBackgroundFetch.h in Headers */ = {isa = PBXBuildFile; fileRef = 8353183F1D5220F6005738CD /* TSBackgroundFetch.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		835318421D5220F6005738CD /* TSBackgroundFetch.m in Sources */ = {isa = PBXBuildFile; fileRef = 835318401D5220F6005738CD /* TSBackgroundFetch.m */; };
+		836DCC9C2BAB1869009BA3F7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 836DCC9B2BAB1869009BA3F7 /* PrivacyInfo.xcprivacy */; };
 		83D531E123D9E2030079D172 /* TSBGTask.h in Headers */ = {isa = PBXBuildFile; fileRef = 83D531E023D9E2030079D172 /* TSBGTask.h */; };
 		83D531E323D9E2140079D172 /* TSBGTask.m in Sources */ = {isa = PBXBuildFile; fileRef = 83D531E223D9E2140079D172 /* TSBGTask.m */; };
 /* End PBXBuildFile section */
@@ -52,6 +53,7 @@
 		8353183F1D5220F6005738CD /* TSBackgroundFetch.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TSBackgroundFetch.h; sourceTree = "<group>"; };
 		835318401D5220F6005738CD /* TSBackgroundFetch.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TSBackgroundFetch.m; sourceTree = "<group>"; };
 		835318C21D525975005738CD /* TSBackgroundFetch.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = TSBackgroundFetch.framework; sourceTree = "<group>"; };
+		836DCC9B2BAB1869009BA3F7 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		83D531DE23D7463A0079D172 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.15.sdk/System/Library/Frameworks/BackgroundTasks.framework; sourceTree = DEVELOPER_DIR; };
 		83D531E023D9E2030079D172 /* TSBGTask.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TSBGTask.h; sourceTree = "<group>"; };
 		83D531E223D9E2140079D172 /* TSBGTask.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TSBGTask.m; sourceTree = "<group>"; };
@@ -106,6 +108,7 @@
 				83D531E223D9E2140079D172 /* TSBGTask.m */,
 				8346550423EDB7FF001DEE2A /* TSBGAppRefreshSubscriber.m */,
 				8346550623EDB814001DEE2A /* TSBGAppRefreshSubscriber.h */,
+				836DCC9B2BAB1869009BA3F7 /* PrivacyInfo.xcprivacy */,
 			);
 			path = TSBackgroundFetch;
 			sourceTree = "<group>";
@@ -226,6 +229,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				836DCC9C2BAB1869009BA3F7 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

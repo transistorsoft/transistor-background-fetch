@@ -198,14 +198,15 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
     }];
 }
 
--(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic callback:(void (^)(NSString* taskId, BOOL timeout))callback {
-    return [self scheduleProcessingTaskWithIdentifier:identifier delay:delay periodic:periodic requiresExternalPower:NO requiresNetworkConnectivity:NO callback:callback];
+-(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier type:(NSInteger)type delay:(NSTimeInterval)delay periodic:(BOOL)periodic callback:(void (^)(NSString* taskId, BOOL timeout))callback {
+    return [self scheduleProcessingTaskWithIdentifier:identifier type:(NSInteger)type delay:delay periodic:periodic requiresExternalPower:NO requiresNetworkConnectivity:NO callback:callback];
 }
 
--(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic requiresExternalPower:(BOOL)requiresExternalPower requiresNetworkConnectivity:(BOOL)requiresNetworkConnectivity callback:(void (^)(NSString* taskId, BOOL timeout))callback {
+-(NSError*) scheduleProcessingTaskWithIdentifier:(NSString*)identifier type:(NSInteger)type delay:(NSTimeInterval)delay periodic:(BOOL)periodic requiresExternalPower:(BOOL)requiresExternalPower requiresNetworkConnectivity:(BOOL)requiresNetworkConnectivity callback:(void (^)(NSString* taskId, BOOL timeout))callback {
     
     TSBGTask *tsTask = [TSBGTask get:identifier];
     if (tsTask) {
+        tsTask.type = type;
         tsTask.delay = delay;
         tsTask.periodic = periodic;
         tsTask.callback = callback;
@@ -221,6 +222,7 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
         }
     } else {
         tsTask = [[TSBGTask alloc] initWithIdentifier:identifier
+                                                 type:type
                                                 delay:delay
                                              periodic:periodic
                                 requiresExternalPower:requiresExternalPower

@@ -111,15 +111,16 @@ static NSMutableArray *_tasks;
 
 /// @deprecated
 -(instancetype) initWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic callback:(void (^)(NSString* taskId, BOOL timeout))callback {
-    return [self initWithIdentifier:identifier delay:delay periodic:periodic requiresExternalPower:NO requiresNetworkConnectivity:NO callback:callback];
+    return [self initWithIdentifier:identifier type:TSTaskTypeProcessing delay:delay periodic:periodic requiresExternalPower:NO requiresNetworkConnectivity:NO callback:callback];
 }
 
--(instancetype) initWithIdentifier:(NSString*)identifier delay:(NSTimeInterval)delay periodic:(BOOL)periodic requiresExternalPower:(BOOL)requiresExternalPower requiresNetworkConnectivity:(BOOL)requiresNetworkConnectivity callback:(void (^)(NSString* taskId, BOOL timeout))callback {
+-(instancetype) initWithIdentifier:(NSString*)identifier type:(NSInteger)type delay:(NSTimeInterval)delay periodic:(BOOL)periodic requiresExternalPower:(BOOL)requiresExternalPower requiresNetworkConnectivity:(BOOL)requiresNetworkConnectivity callback:(void (^)(NSString* taskId, BOOL timeout))callback {
     
     self = [self init];
     
     if (self) {
         _identifier = identifier;
+        _type = type;
         _delay = delay;
         _periodic = periodic;
         _requiresExternalPower = requiresExternalPower;
@@ -160,14 +161,15 @@ static NSMutableArray *_tasks;
             [[BGTaskScheduler sharedScheduler] cancelTaskRequestWithIdentifier:_identifier];
         }
         
-        BGProcessingTaskRequest *request = [[BGProcessingTaskRequest alloc] initWithIdentifier:_identifier];
+        NSError *error = nil;
+        BGProcessingTaskRequest *request = [self buildRequest];
         // TODO Configurable.
         request.requiresExternalPower = _requiresExternalPower;
         request.requiresNetworkConnectivity = _requiresNetworkConnectivity;
         request.earliestBeginDate = [NSDate dateWithTimeIntervalSinceNow:_delay];
         
-        NSError *error = nil;
         [scheduler submitTaskRequest:request error:&error];
+        
         if (!error) {
             scheduled = YES;
             if (!_enabled) {
@@ -179,6 +181,20 @@ static NSMutableArray *_tasks;
     } else {
         return [[NSError alloc] initWithDomain:TAG code:-1 userInfo:@{NSLocalizedFailureReasonErrorKey:ERROR_PROCESSING_TASK_NOT_AVAILABLE}];
     }
+}
+
+- (BGProcessingTaskRequest*) buildRequest  API_AVAILABLE(ios(13.0)){
+    /* DISABLED UNTIL I FIGURE THIS OUT:
+    if (@available (ios 17.0, *)) {
+        if (_type == TSTaskTypeHealthResearch) {
+            BGHealthResearchTaskRequest *request = [[BGHealthResearchTaskRequest alloc] initWithIdentifier:_identifier];
+            request.protectionTypeOfRequiredData = @"TODO protectionTypeOfRequiredData";
+            return request;
+        }
+    }
+    */
+    return [[BGProcessingTaskRequest alloc] initWithIdentifier:_identifier];
+    
 }
 
 - (void) stop {
@@ -218,7 +234,9 @@ static NSMutableArray *_tasks;
     }
     _finished = NO;
     if (_callback) {
-        _callback(_identifier, NO);
+        dispatch_async(dispatch_get_main_queue(), ^(void) {
+            self.callback(self.identifier, NO);
+        });
         _executed = YES;
         return YES;
     } else {
@@ -282,6 +300,7 @@ static NSMutableArray *_tasks;
 -(NSDictionary*) toDictionary {
     return @{
         @"identifier": _identifier,
+        @"type": @(_type),
         @"delay": @(_delay),
         @"periodic": @(_periodic),
         @"enabled": @(_enabled),
