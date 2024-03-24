@@ -195,9 +195,11 @@
 					835318241D5220A3005738CD = {
 						CreatedOnToolsVersion = 7.3.1;
 						DevelopmentTeam = 32A636YFGZ;
+						ProvisioningStyle = Automatic;
 					};
 					8353182E1D5220A3005738CD = {
 						CreatedOnToolsVersion = 7.3.1;
+						DevelopmentTeam = 32A636YFGZ;
 					};
 					835318461D5221F4005738CD = {
 						CreatedOnToolsVersion = 7.3.1;
@@ -254,7 +256,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "echo \"- Building TSLocationManager.framework\"\n\nWORKSPACE_DIR=/Users/chris/workspace\n\nCONFIGURATION=\"Release\"\n\nCORDOVA_DIR=${WORKSPACE_DIR}/background-geolocation/cordova/cordova-plugin-background-fetch/src/ios\nTS_LOCATION_MANAGER_DIR=${WORKSPACE_DIR}/background-geolocation/native/transistor-locationmanager/src/ios/TSLocationManager\nREACT_NATIVE_DIR=${WORKSPACE_DIR}/background-geolocation/react/react-native-background-fetch/ios/RNBackgroundFetch\nNATIVE_SCRIPT_DIR=${WORKSPACE_DIR}/background-geolocation/NativeScript/nativescript-background-fetch/src/platforms/ios\nFLUTTER_DIR=${WORKSPACE_DIR}/background-geolocation/flutter/flutter_background_fetch/ios\nNATIVE_BACKGROUND_GEOLOCATION_DIR=${WORKSPACE_DIR}/background-geolocation/native/background-geolocation-lt/ios/BackgroundGeolocation/Frameworks\nCAPACITOR_DIR=${WORKSPACE_DIR}/background-geolocation/capacitor/capacitor-background-fetch/ios\necho \"------------------------- BUILDING -----------------------\"\n\nWORKING_DIR=$(pwd)\n\nFRAMEWORK_FOLDER_NAME=\"${PROJECT_NAME}_XCFramework\"\n\nFRAMEWORK_PATH=\"${WORKING_DIR}/${FRAMEWORK_FOLDER_NAME}/${PROJECT_NAME}.xcframework\"\nBUILD_SCHEME=\"TSBackgroundFetch\" # or whatever the scheme you build is named...\nSIMULATOR_ARCHIVE_PATH=\"${WORKING_DIR}/${FRAMEWORK_FOLDER_NAME}/simulator.xcarchive\"\nIOS_DEVICE_ARCHIVE_PATH=\"${WORKING_DIR}/${FRAMEWORK_FOLDER_NAME}/iOS.xcarchive\"\nCATALYST_ARCHIVE_PATH=\"${WORKING_DIR}/${FRAMEWORK_FOLDER_NAME}/catalyst.xcarchive\"\n\nrm -rf \"${WORKING_DIR:?}/${FRAMEWORK_FOLDER_NAME}\"\necho \"Deleted ${FRAMEWORK_FOLDER_NAME}\"\nmkdir \"${FRAMEWORK_FOLDER_NAME}\"\necho \"Created ${FRAMEWORK_FOLDER_NAME}\"\n\necho \"Archiving for iOS Simulator\"\nxcodebuild archive -target \"${PROJECT_NAME}\" -scheme ${BUILD_SCHEME} -configuration Release \\\n  -destination=\"iOS Simulator\" -archivePath \"${SIMULATOR_ARCHIVE_PATH}\" \\\n  -sdk iphonesimulator SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES# | xcpretty -k\n\necho \"Archiving for iOS\"\nxcodebuild archive -target \"${PROJECT_NAME}\" -scheme ${BUILD_SCHEME} -configuration Release \\\n  -destination=\"iOS\" -archivePath \"${IOS_DEVICE_ARCHIVE_PATH}\" \\\n  -sdk iphoneos SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES# | xcpretty -k\n\necho \"Archiving for Mac Catalyst\"\nxcodebuild archive -target \"${PROJECT_NAME}\" -scheme ${BUILD_SCHEME} -configuration Release \\\n  -destination='platform=macOS,arch=x86_64,variant=Mac Catalyst' -archivePath \"${CATALYST_ARCHIVE_PATH}\" \\\n  SKIP_INSTALL=NO BUILD_platform=macOS,arch=x86_64,variant=Mac CatalystLIBRARY_FOR_DISTRIBUTION=YES\n\necho \"Packaging archives into ${PROJECT_NAME}.xcframework bundle\"\nxcodebuild -create-xcframework \\\n  -framework \"${SIMULATOR_ARCHIVE_PATH}/Products/Library/Frameworks/${PROJECT_NAME}.framework\" \\\n  -framework \"${IOS_DEVICE_ARCHIVE_PATH}/Products/Library/Frameworks/${PROJECT_NAME}.framework\" \\\n  -framework \"${CATALYST_ARCHIVE_PATH}/Products/Library/Frameworks/${PROJECT_NAME}.framework\" \\\n  -output \"${FRAMEWORK_PATH}\" | xcpretty\n  \nrm -rf \"${SIMULATOR_ARCHIVE_PATH}\"\nrm -rf \"${IOS_DEVICE_ARCHIVE_PATH}\"\nrm -rf \"${CATALYST_ARCHIVE_PATH}\"\n\nCATALYST_FRAMEWORK_PATH=\"${FRAMEWORK_PATH}/ios-arm64_x86_64-maccatalyst/${PROJECT_NAME}.framework\"\n\necho \"*** CATALYST_FRAMEWORK_PATH: ${CATALYST_FRAMEWORK_PATH}\"\n\n# Flatten maccatalyst framework Versions/A \nunlink \"${CATALYST_FRAMEWORK_PATH}/Headers\"\nunlink \"${CATALYST_FRAMEWORK_PATH}/Modules\"\nunlink \"${CATALYST_FRAMEWORK_PATH}/Resources\"\nunlink \"${CATALYST_FRAMEWORK_PATH}/${PROJECT_NAME}\" \ncp -R \"${CATALYST_FRAMEWORK_PATH}/Versions/A/\" \"${CATALYST_FRAMEWORK_PATH}\"\nrm -rf \"${CATALYST_FRAMEWORK_PATH}/Versions\"\n\n# Catalyst framework directory structure flattening step 1:\n# - Copy the framework in a specific way: de-referencing symbolic links on purpose\n\necho \"------------------------- COPYING BUILD ------------------------\"\n# Step 5. Copy to satellite projects Cordova & React Native\nrm -rf \"${REACT_NATIVE_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${CORDOVA_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${TS_LOCATION_MANAGER_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${NATIVE_SCRIPT_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${FLUTTER_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${NATIVE_BACKGROUND_GEOLOCATION_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${CAPACITOR_DIR}/${PROJECT_NAME}.framework\"\n\nrm -rf \"${REACT_NATIVE_DIR}/${PROJECT_NAME}.xcframework\"\nrm -rf \"${CORDOVA_DIR}/${PROJECT_NAME}.xcframework\"\nrm -rf \"${TS_LOCATION_MANAGER_DIR}/${PROJECT_NAME}.xcframework\"\nrm -rf \"${NATIVE_SCRIPT_DIR}/${PROJECT_NAME}.xcframework\"\nrm -rf \"${FLUTTER_DIR}/${PROJECT_NAME}.xcframework\"\nrm -rf \"${NATIVE_BACKGROUND_GEOLOCATION_DIR}/${PROJECT_NAME}.xcframework\"\nrm -rf \"${CAPACITOR_DIR}/${PROJECT_NAME}.xcframework\"\n\ncp -R \"${FRAMEWORK_PATH}\" \"${REACT_NATIVE_DIR}\"\ncp -R \"${FRAMEWORK_PATH}\" \"${CORDOVA_DIR}\"\ncp -R \"${FRAMEWORK_PATH}\" \"${TS_LOCATION_MANAGER_DIR}\"\ncp -R \"${FRAMEWORK_PATH}\" \"${NATIVE_SCRIPT_DIR}\"\ncp -R \"${FRAMEWORK_PATH}\" \"${FLUTTER_DIR}\"\ncp -R \"${FRAMEWORK_PATH}\" \"${NATIVE_BACKGROUND_GEOLOCATION_DIR}\"\ncp -R \"${FRAMEWORK_PATH}\" \"${CAPACITOR_DIR}\"\n\n# DONE COPY\n# Catalyst framework directory structure flattening step 2:\n# - Remove the catalyst framework \"Versions\" directory structure after symbolic link de-reference\n#rm -rf \"${OUTPUT_FOLDER}/${PROJECT_NAME}.xcframework/ios-arm64_x86_64-maccatalyst/${PROJECT_NAME}.framework/Versions\"\n\necho \"Cleaning up intermediate files\"\nrm -rf \"${WORKING_DIR:?}/${FRAMEWORK_FOLDER_NAME}\"\n\n\n\n";
+			shellScript = "echo \"- Building TSLocationManager.framework\"\n\nWORKSPACE_DIR=/Users/chris/workspace\n\nSIGNING_IDENTITY=$(head -n 1 \"/Users/chris/Documents/xcode-signing-identity.txt\")\n                              \necho \"************* SIGNING: ${SIGNING_IDENTITY}\"\n\nCONFIGURATION=\"Release\"\n\nCORDOVA_DIR=${WORKSPACE_DIR}/background-geolocation/cordova/cordova-plugin-background-fetch/src/ios\nTS_LOCATION_MANAGER_DIR=${WORKSPACE_DIR}/background-geolocation/native/transistor-locationmanager/src/ios/TSLocationManager\nREACT_NATIVE_DIR=${WORKSPACE_DIR}/background-geolocation/react/react-native-background-fetch/ios/RNBackgroundFetch\nFLUTTER_DIR=${WORKSPACE_DIR}/background-geolocation/flutter/flutter_background_fetch/ios\nNATIVE_BACKGROUND_GEOLOCATION_DIR=${WORKSPACE_DIR}/background-geolocation/native/background-geolocation-lt/ios/BackgroundGeolocation/Frameworks\nCAPACITOR_DIR=${WORKSPACE_DIR}/background-geolocation/capacitor/capacitor-background-fetch/ios\necho \"------------------------- BUILDING -----------------------\"\n\nWORKING_DIR=$(pwd)\n\nFRAMEWORK_FOLDER_NAME=\"${PROJECT_NAME}_XCFramework\"\n\nFRAMEWORK_PATH=\"${WORKING_DIR}/${FRAMEWORK_FOLDER_NAME}/${PROJECT_NAME}.xcframework\"\nBUILD_SCHEME=\"TSBackgroundFetch\" # or whatever the scheme you build is named...\nSIMULATOR_ARCHIVE_PATH=\"${WORKING_DIR}/${FRAMEWORK_FOLDER_NAME}/simulator.xcarchive\"\nIOS_DEVICE_ARCHIVE_PATH=\"${WORKING_DIR}/${FRAMEWORK_FOLDER_NAME}/iOS.xcarchive\"\nCATALYST_ARCHIVE_PATH=\"${WORKING_DIR}/${FRAMEWORK_FOLDER_NAME}/catalyst.xcarchive\"\n\nrm -rf \"${WORKING_DIR:?}/${FRAMEWORK_FOLDER_NAME}\"\necho \"Deleted ${FRAMEWORK_FOLDER_NAME}\"\nmkdir \"${FRAMEWORK_FOLDER_NAME}\"\necho \"Created ${FRAMEWORK_FOLDER_NAME}\"\n\necho \"Archiving for iOS Simulator\"\nxcodebuild archive -target \"${PROJECT_NAME}\" -scheme ${BUILD_SCHEME} -configuration Release \\\n  -destination=\"iOS Simulator\" -archivePath \"${SIMULATOR_ARCHIVE_PATH}\" \\\n  -sdk iphonesimulator SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES# | xcpretty -k\n\necho \"Archiving for iOS\"\nxcodebuild archive -target \"${PROJECT_NAME}\" -scheme ${BUILD_SCHEME} -configuration Release \\\n  -destination=\"iOS\" -archivePath \"${IOS_DEVICE_ARCHIVE_PATH}\" \\\n  -sdk iphoneos SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES# | xcpretty -k\n\necho \"Archiving for Mac Catalyst\"\nxcodebuild archive -target \"${PROJECT_NAME}\" -scheme ${BUILD_SCHEME} -configuration Release \\\n  -destination='platform=macOS,arch=x86_64,variant=Mac Catalyst' -archivePath \"${CATALYST_ARCHIVE_PATH}\" \\\n  SKIP_INSTALL=NO BUILD_platform=macOS,arch=x86_64,variant=Mac CatalystLIBRARY_FOR_DISTRIBUTION=YES\n\necho \"Packaging archives into ${PROJECT_NAME}.xcframework bundle\"\n\nxcodebuild -create-xcframework \\\n  -framework \"${SIMULATOR_ARCHIVE_PATH}/Products/Library/Frameworks/${PROJECT_NAME}.framework\" \\\n  -framework \"${IOS_DEVICE_ARCHIVE_PATH}/Products/Library/Frameworks/${PROJECT_NAME}.framework\" \\\n  -framework \"${CATALYST_ARCHIVE_PATH}/Products/Library/Frameworks/${PROJECT_NAME}.framework\" \\\n  -output \"${FRAMEWORK_PATH}\" | xcpretty\n\nrm -rf \"${SIMULATOR_ARCHIVE_PATH}\"\nrm -rf \"${IOS_DEVICE_ARCHIVE_PATH}\"\nrm -rf \"${CATALYST_ARCHIVE_PATH}\"\n\nCATALYST_FRAMEWORK_PATH=\"${FRAMEWORK_PATH}/ios-arm64_x86_64-maccatalyst/${PROJECT_NAME}.framework\"\n\necho \"*** CATALYST_FRAMEWORK_PATH: ${CATALYST_FRAMEWORK_PATH}\"\n\n# Flatten maccatalyst framework Versions/A \nunlink \"${CATALYST_FRAMEWORK_PATH}/Headers\"\nunlink \"${CATALYST_FRAMEWORK_PATH}/Modules\"\nunlink \"${CATALYST_FRAMEWORK_PATH}/Resources\"\nunlink \"${CATALYST_FRAMEWORK_PATH}/${PROJECT_NAME}\" \ncp -R \"${CATALYST_FRAMEWORK_PATH}/Versions/A/\" \"${CATALYST_FRAMEWORK_PATH}\"\nrm -rf \"${CATALYST_FRAMEWORK_PATH}/Versions\"\n\n# Catalyst framework directory structure flattening step 1:\n# - Copy the framework in a specific way: de-referencing symbolic links on purpose\n\necho \"------------------------- COPYING BUILD ------------------------\"\n# Step 5. Copy to satellite projects Cordova & React Native\nrm -rf \"${REACT_NATIVE_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${CORDOVA_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${TS_LOCATION_MANAGER_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${FLUTTER_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${NATIVE_BACKGROUND_GEOLOCATION_DIR}/${PROJECT_NAME}.framework\"\nrm -rf \"${CAPACITOR_DIR}/${PROJECT_NAME}.framework\"\n\nrm -rf \"${REACT_NATIVE_DIR}/${PROJECT_NAME}.xcframework\"\nrm -rf \"${CORDOVA_DIR}/${PROJECT_NAME}.xcframework\"\nrm -rf \"${TS_LOCATION_MANAGER_DIR}/${PROJECT_NAME}.xcframework\"\n\nrm -rf \"${FLUTTER_DIR}/${PROJECT_NAME}.xcframework\"\nrm -rf \"${NATIVE_BACKGROUND_GEOLOCATION_DIR}/${PROJECT_NAME}.xcframework\"\nrm -rf \"${CAPACITOR_DIR}/${PROJECT_NAME}.xcframework\"\n\ncp -R \"${FRAMEWORK_PATH}\" \"${REACT_NATIVE_DIR}\"\ncodesign --timestamp -s \"${SIGNING_IDENTITY}\" \"${REACT_NATIVE_DIR}/${PROJECT_NAME}.xcframework\"\ncp -R \"${FRAMEWORK_PATH}\" \"${CORDOVA_DIR}\"\ncodesign --timestamp -s \"${SIGNING_IDENTITY}\" \"${CORDOVA_DIR}/${PROJECT_NAME}.xcframework\"\ncp -R \"${FRAMEWORK_PATH}\" \"${TS_LOCATION_MANAGER_DIR}\"\ncodesign --timestamp -s \"${SIGNING_IDENTITY}\" \"${TS_LOCATION_MANAGER_DIR}/${PROJECT_NAME}.xcframework\"\ncp -R \"${FRAMEWORK_PATH}\" \"${FLUTTER_DIR}\"\ncodesign --timestamp -s \"${SIGNING_IDENTITY}\" \"${FLUTTER_DIR}/${PROJECT_NAME}.xcframework\"\n\n\ncp -R \"${FRAMEWORK_PATH}\" \"${NATIVE_BACKGROUND_GEOLOCATION_DIR}\"\ncp -R \"${FRAMEWORK_PATH}\" \"${CAPACITOR_DIR}\"\n\n# DONE COPY\n# Catalyst framework directory structure flattening step 2:\n# - Remove the catalyst framework \"Versions\" directory structure after symbolic link de-reference\n#rm -rf \"${OUTPUT_FOLDER}/${PROJECT_NAME}.xcframework/ios-arm64_x86_64-maccatalyst/${PROJECT_NAME}.framework/Versions\"\n\necho \"Cleaning up intermediate files\"\nrm -rf \"${WORKING_DIR:?}/${FRAMEWORK_FOLDER_NAME}\"\n\n\n\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -413,8 +415,8 @@
 				ALWAYS_SEARCH_USER_PATHS = YES;
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
 				CLANG_ENABLE_MODULE_DEBUGGING = NO;
-				CODE_SIGN_IDENTITY = "";
-				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = 32A636YFGZ;
@@ -434,6 +436,7 @@
 				MACH_O_TYPE = staticlib;
 				PRODUCT_BUNDLE_IDENTIFIER = com.transistorsoft.TSBackgroundFetch;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_WORKSPACE = YES;
@@ -445,8 +448,8 @@
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
 				CLANG_ENABLE_MODULE_DEBUGGING = NO;
-				CODE_SIGN_IDENTITY = "";
-				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = 32A636YFGZ;
@@ -467,6 +470,7 @@
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.transistorsoft.TSBackgroundFetch;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_WORKSPACE = YES;
@@ -477,6 +481,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				DEVELOPMENT_TEAM = 32A636YFGZ;
 				INFOPLIST_FILE = TSBackgroundFetchTests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.transistorsoft.TSBackgroundFetchTests;
@@ -488,6 +493,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUILD_LIBRARY_FOR_DISTRIBUTION = YES;
+				DEVELOPMENT_TEAM = 32A636YFGZ;
 				INFOPLIST_FILE = TSBackgroundFetchTests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.transistorsoft.TSBackgroundFetchTests;
