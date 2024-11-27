@@ -5,7 +5,7 @@ afterEvaluate {
     publishing {
         publications {
             tsbackgroundfetch(MavenPublication) {
-                println("[tsbackgroundfetch] publication")
+                println("[tsbackgroundfetch] ✅ publication")
                 groupId 'com.transistorsoft'
                 artifactId 'tsbackgroundfetch'
                 version VERSION_NAME
@@ -16,7 +16,7 @@ afterEvaluate {
         repositories {
             maven {
                 name = "tsbackgroundfetch"
-                url "$buildDir/repo"
+                url "${getLayout().buildDirectory.get()}/repo"
             }
         }
     }
@@ -58,10 +58,9 @@ tasks.withType(PublishToMavenRepository) { task ->
 
 // Build Release
 task buildRelease { task ->
-    println("[tsbackgroundfetch] buildRelease")
+    println("[tsbackgroundfetch] ✅ buildRelease")
     task.dependsOn 'cordovaRelease'
     task.dependsOn 'reactNativeRelease'
-    //task.dependsOn 'nativeScriptRelease'
     task.dependsOn 'flutterRelease'
     task.dependsOn 'capacitorRelease'
 }
@@ -69,7 +68,7 @@ task buildRelease { task ->
 
 // Publish Release.
 task publishRelease { task ->
-    println("[tsbackgroundfetch] publishRelease")
+    println("[tsbackgroundfetch] ✅ publishRelease")
 }
 
 tasks["publish"].mustRunAfter("publishRelease")
@@ -79,17 +78,17 @@ def WORKSPACE_PATH = "/Users/chris/workspace"
 // Build local maven repo.
 def LIBRARY_PATH = "com/transistorsoft/tsbackgroundfetch"
 task buildLocalRepository { task ->
-    println("[tsbackgroundfetch] buildLocalRepository")
+    println("[tsbackgroundfetch] ✅ buildLocalRepository")
     task.dependsOn 'publish'
     doLast {
-        delete "$buildDir/repo-local"
+        delete "${getLayout().buildDirectory.get()}/repo-local"
         copy {
-            from "$buildDir/repo/$LIBRARY_PATH/$VERSION_NAME"
-            into "$buildDir/repo-local/$LIBRARY_PATH/$VERSION_NAME"
+            from "${getLayout().buildDirectory.get()}/repo/$LIBRARY_PATH/$VERSION_NAME"
+            into "${getLayout().buildDirectory.get()}/repo-local/$LIBRARY_PATH/$VERSION_NAME"
         }
         copy {
-            from("$buildDir/repo/$LIBRARY_PATH/maven-metadata.xml")
-            into("$buildDir/repo-local/$LIBRARY_PATH")
+            from("${getLayout().buildDirectory.get()}/repo/$LIBRARY_PATH/maven-metadata.xml")
+            into("${getLayout().buildDirectory.get()}/repo-local/$LIBRARY_PATH")
         }
     }
 }
@@ -98,11 +97,11 @@ def cordovaDir = "$WORKSPACE_PATH/background-geolocation/cordova/cordova-plugin-
 task cordovaRelease { task ->
     task.dependsOn 'buildLocalRepository'
     doLast {
-        println("OK")
+        println("✅ OK")
         delete "$cordovaDir/src/android/libs"
         copy {
             // Maven repo format.
-            from("$buildDir/repo-local")
+            from("${getLayout().buildDirectory.get()}/repo-local")
             into("$cordovaDir/src/android/libs")
         }
     }
@@ -112,11 +111,11 @@ def reactNativeDir = "$WORKSPACE_PATH/background-geolocation/react/react-native-
 task reactNativeRelease { task ->
     task.dependsOn 'buildLocalRepository'
     doLast {
-        println("OK")
+        println("✅ OK")
         delete "$reactNativeDir/android/libs"
         copy {
             // Maven repo format.
-            from("$buildDir/repo-local")
+            from("${getLayout().buildDirectory.get()}/repo-local")
             into("$reactNativeDir/android/libs")
         }
     }
@@ -126,11 +125,11 @@ def flutterDir = "$WORKSPACE_PATH/background-geolocation/flutter/flutter_backgro
 task flutterRelease { task ->
     task.dependsOn 'buildLocalRepository'
     doLast {
-        println("OK")
+        println("✅ OK")
         delete "$flutterDir/android/libs"
         copy {
             // Maven repo format.
-            from("$buildDir/repo-local")
+            from("${getLayout().buildDirectory.get()}/repo-local")
             into("$flutterDir/android/libs")
         }
     }
@@ -140,18 +139,12 @@ def capacitorDir = "$WORKSPACE_PATH/background-geolocation/capacitor/capacitor-b
 task capacitorRelease { task ->
     task.dependsOn 'buildLocalRepository'
     doLast {
-        println("OK")
+        println("✅ OK")
         delete "$capacitorDir/android/libs"
         copy {
             // Maven repo format.
-            from("$buildDir/repo-local")
+            from("${getLayout().buildDirectory.get()}/repo-local")
             into("$capacitorDir/android/libs")
         }
     }
-}
-
-task nativeScriptRelease(type: Copy) {
-    from('./build/outputs/aar/tsbackgroundfetch-release.aar')
-    into("$WORKSPACE_PATH/NativeScript/background-geolocation/nativescript-background-fetch/src/platforms/android/libs")
-    rename('tsbackgroundfetch-release.aar', 'tsbackgroundfetch.aar')
 }
