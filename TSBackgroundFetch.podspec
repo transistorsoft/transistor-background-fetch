@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'TSBackgroundFetch'
-  s.version          = '0.0.1'
+  s.version          = '0.0.3'
   s.summary          = 'iOS Background Fetch API Manager'
 
   s.description      = <<-DESC
@@ -23,6 +23,6 @@ iOS Background Fetch API Manager with ability to handle multiple listeners.
 
   s.ios.deployment_target = '8.0'
 
-  s.source_files        = 'ios/TSBackgroundFetch/TSBackgroundFetch/*.{h,m}'
-  s.vendored_frameworks = 'ios/TSBackgroundFetch/TSBackgroundFetch.framework'
+  #s.source_files        = 'ios/TSBackgroundFetch/TSBackgroundFetch/*.{h,m}'
+  s.vendored_frameworks = 'ios/TSBackgroundFetch/TSBackgroundFetch_XCFramework/TSBackgroundFetch.xcframework'
 end

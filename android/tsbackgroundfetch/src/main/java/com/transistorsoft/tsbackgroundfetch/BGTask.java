@@ -65,6 +65,7 @@ public class BGTask {
         }
     }
 
+    private final List<FetchJobService.CompletionHandler> mCompletionHandlers = new ArrayList<>();
     private FetchJobService.CompletionHandler mCompletionHandler;
     private String mTaskId;
     private int mJobId;
@@ -73,7 +74,8 @@ public class BGTask {
 
     BGTask(final Context context, String taskId, FetchJobService.CompletionHandler handler, int jobId) {
         mTaskId = taskId;
-        mCompletionHandler = handler;
+        //mCompletionHandler = handler;
+        mCompletionHandlers.add(handler);
         mJobId = jobId;
 
         mTimeoutTask = new Runnable() {
@@ -96,18 +98,30 @@ public class BGTask {
         return ((mTaskId != null) && mTaskId.equalsIgnoreCase(taskId));
     }
 
-    void setCompletionHandler(FetchJobService.CompletionHandler handler) {
-        mCompletionHandler = handler;
+    public void setCompletionHandler(FetchJobService.CompletionHandler handler) {
+        synchronized (mCompletionHandlers) {
+            mCompletionHandlers.add(handler);
+        }
+        //mCompletionHandler = handler;
     }
 
     void finish() {
+        synchronized (mCompletionHandlers) {
+            for (FetchJobService.CompletionHandler handler : mCompletionHandlers) {
+                handler.finish();
+            }
+            mCompletionHandlers.clear();
+        }
+        /*
         if (mCompletionHandler != null) {
             mCompletionHandler.finish();
         }
+         */
         if (mTimeoutTask != null) {
             BackgroundFetch.getUiHandler().removeCallbacks(mTimeoutTask);
         }
-        mCompletionHandler = null;
+
+        //mCompletionHandler = null;
         removeTask(mTaskId);
     }
 
