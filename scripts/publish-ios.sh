@@ -48,6 +48,7 @@ DRY_RUN=0
 NO_BUILD=0
 XCFRAMEWORK_DIR_OVERRIDE=""
 PUSH_COCOAPODS=0
+RETAG=0
 
 usage() { sed -n '1,120p' "$0" | sed 's/^  //'; exit 1; }
 
@@ -60,6 +61,7 @@ while [[ $# -gt 0 ]]; do
     --no-build) NO_BUILD=1; shift;;
     --xcframework-dir) XCFRAMEWORK_DIR_OVERRIDE="${2:-}"; shift 2;;
     --push-cocoapods) PUSH_COCOAPODS=1; shift;;
+    --retag) RETAG=1; shift;;
     -h|--help) usage;;
     *) echo "Unknown arg: $1"; usage;;
   esac
@@ -97,6 +99,16 @@ VERSION="$(resolve_version)"
 echo "ℹ️  Version: ${VERSION}"
 echo "ℹ️  Public repo: ${PUBLIC_REPO}"
 echo "ℹ️  Catalyst: $( [[ "$INCLUDE_CATALYST" == "1" ]] && echo ENABLED || echo DISABLED )"
+
+remote_tag_exists() {
+  git ls-remote --tags "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${VERSION}" | grep -q "refs/tags/${VERSION}"
+}
+
+if remote_tag_exists && [[ "$RETAG" -ne 1 ]]; then
+  echo "❌ Tag '${VERSION}' already exists on remote ${PUBLIC_REPO}." >&2
+  echo "   Use --bump to pick a new version (e.g., --bump patch) or pass --retag to overwrite the tag." >&2
+  exit 1
+fi
 
 OUT_ROOT="${REPO_ROOT}/build/Release-Publish/${BINARY_NAME}_XCFramework_${VERSION}"
 XCFRAMEWORK_DIR_DEFAULT="${OUT_ROOT}/${BINARY_NAME}.xcframework"
@@ -166,18 +178,14 @@ PY
     --data-binary @"$ZIP_PATH" "${upload_url}?name=${ZIP_NAME}" >/dev/null
 fi
 
-echo "▶ Clone/update ${PUBLIC_REPO}: Package.swift + podspec, tag, push"
-CLONE_DIR="$(mktemp -d)"
-if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
-  git clone "git@github.com:${PUBLIC_REPO}.git" "$CLONE_DIR"
-else
-  git clone "https://github.com/${PUBLIC_REPO}.git" "$CLONE_DIR"
-fi
-pushd "$CLONE_DIR" >/dev/null
+echo "▶ Update local repo (in-place): Package.swift + podspec, commit, tag, push"
+
+PACKAGE_SWIFT="${REPO_ROOT}/Package.swift"
+PODSPEC_PATH="${REPO_ROOT}/${PODSPEC_NAME}"
 
 # Initialize Package.swift if missing
-if [[ ! -f Package.swift ]]; then
-  cat > Package.swift <<SWIFT
+if [[ ! -f "${PACKAGE_SWIFT}" ]]; then
+  cat > "${PACKAGE_SWIFT}" <<SWIFT
 // swift-tools-version: 5.9
 import PackageDescription
 let package = Package(
@@ -196,8 +204,8 @@ SWIFT
 fi
 
 # Initialize podspec if missing
-if [[ -n "$PODSPEC_NAME" && ! -f "$PODSPEC_NAME" ]]; then
-  cat > "$PODSPEC_NAME" <<POD
+if [[ -n "${PODSPEC_NAME}" && ! -f "${PODSPEC_PATH}" ]]; then
+  cat > "${PODSPEC_PATH}" <<POD
 Pod::Spec.new do |s|
   s.name                = '${BINARY_NAME}'
   s.version             = '${VERSION}'
@@ -219,12 +227,12 @@ POD
 fi
 
 # Update Package.swift url + checksum
-sed -i '' "s|url: \".*\"|url: \"${ASSET_URL}\"|g" Package.swift
-sed -i '' "s|checksum: \".*\"|checksum: \"${CHECKSUM}\"|g" Package.swift
+sed -i '' "s|url: \".*\"|url: \"${ASSET_URL}\"|g" "${PACKAGE_SWIFT}"
+sed -i '' "s|checksum: \".*\"|checksum: \"${CHECKSUM}\"|g" "${PACKAGE_SWIFT}"
 
 # Update Podspec key fields (keep open-source license/homepage/docs)
-if [[ -n "$PODSPEC_NAME" && -f "$PODSPEC_NAME" ]]; then
-  ruby - "$PODSPEC_NAME" "$VERSION" "$ASSET_URL" <<'RUBY'
+if [[ -n "${PODSPEC_NAME}" && -f "${PODSPEC_PATH}" ]]; then
+  ruby - "${PODSPEC_PATH}" "${VERSION}" "${ASSET_URL}" <<'RUBY'
 path, version, url = ARGV
 txt = File.read(path)
 replacements = {
@@ -238,6 +246,12 @@ replacements = {
   /^\s*s\.frameworks\s*=.*$/i         => "  s.frameworks          = 'UIKit'",
   /^\s*s\.weak_frameworks\s*=.*$/i    => "  s.weak_frameworks     = 'BackgroundTasks'",
   /^\s*s\.vendored_frameworks\s*=.*$/i=> "  s.vendored_frameworks = '#{File.basename(url,'.zip')}.xcframework'",
+  /^\s*s\.summary\s*=.*$/i            => "  s.summary             = 'Background fetch & periodic background tasks for iOS.'",
+  /^\s*s\.description\s*=.*$/i        => "  s.description         = 'Lightweight, open-source Background Fetch that wraps BGTaskScheduler / background fetch to deliver reliable periodic callbacks.'",
+  /^\s*s\.author\s*=.*$/i             => "  s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }",
+  /^\s*s\.ios\.deployment_target\s*=.*$/i => "  s.ios.deployment_target = '12.0'",
+  /^\s*s\.static_framework\s*=.*$/i   => "  s.static_framework    = true",
+  /^\s*s\.pod_target_xcconfig\s*=.*$/i => "  s.pod_target_xcconfig = { 'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'YES' }",
 }
 replacements.each do |pattern, replacement|
   if txt =~ pattern
@@ -246,29 +260,70 @@ replacements.each do |pattern, replacement|
     txt.sub!(/\nend\s*\z/m) { "\n#{replacement}\nend" }
   end
 end
+
+# Remove legacy source_files when using a vendored binary
+txt.gsub!(/^\s*s\.source_files\s*=.*$/i, '')
+
+# Ensure required keys exist; if missing, inject them before `end`
+ensure_lines = [
+  "  s.summary             = 'Background fetch & periodic background tasks for iOS.'",
+  "  s.description         = 'Lightweight, open-source Background Fetch that wraps BGTaskScheduler / background fetch to deliver reliable periodic callbacks.'",
+  "  s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }",
+  "  s.ios.deployment_target = '12.0'",
+  "  s.static_framework    = true",
+  "  s.pod_target_xcconfig = { 'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'YES' }",
+  "  s.frameworks          = 'UIKit'",
+  "  s.weak_frameworks     = 'BackgroundTasks'",
+  "  s.vendored_frameworks = '#{File.basename(url, '.zip')}.xcframework'"
+]
+ensure_lines.each do |line|
+  unless txt.include?(line)
+    txt.sub!(/\nend\s*\z/m) { "\n#{line}\nend" }
+  end
+end
+
+# Normalize whitespace created by deletions
+txt.gsub!(/\n{2,}/, "\n")
+
 File.write(path, txt)
 RUBY
 fi
 
-git add Package.swift || true
-[[ -n "$PODSPEC_NAME" && -f "$PODSPEC_NAME" ]] && git add "$PODSPEC_NAME" || true
+# Commit, tag, and push from the current repo
+pushd "${REPO_ROOT}" >/dev/null
+
+git add "${PACKAGE_SWIFT}" || true
+[[ -n "${PODSPEC_NAME}" && -f "${PODSPEC_PATH}" ]] && git add "${PODSPEC_PATH}" || true
+
 git commit -m "chore: ${BINARY_NAME} ${VERSION} (url + checksum)" || echo "No file changes"
-git tag -f "${VERSION}"
-git push
-git push --force --tags
-if [[ "$PUSH_COCOAPODS" -eq 1 ]]; then
+
+if [[ "$RETAG" -eq 1 ]]; then
+  echo "↺ Retagging ${VERSION} (deleting remote tag if present)…"
+  git tag -f "${VERSION}"
+  git push --delete origin "${VERSION}" >/dev/null 2>&1 || true
+  git push origin "${VERSION}"
+else
+  # Create tag only if it doesn't already exist locally
+  if ! git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+    git tag "${VERSION}"
+  fi
+  git push origin "${VERSION}" || true
+fi
+
+if [[ "${PUSH_COCOAPODS}" -eq 1 ]]; then
   echo "▶ Pushing to CocoaPods Trunk..."
   if ! command -v pod >/dev/null 2>&1; then
     echo "❌ CocoaPods 'pod' CLI not found. Install with: sudo gem install cocoapods"
     exit 1
   fi
-  if [[ -z "$PODSPEC_NAME" || ! -f "$PODSPEC_NAME" ]]; then
-    echo "❌ Podspec '${PODSPEC_NAME}' not found in the public repo checkout; cannot push."
+  if [[ -z "${PODSPEC_NAME}" || ! -f "${PODSPEC_PATH}" ]]; then
+    echo "❌ Podspec '${PODSPEC_NAME}' not found in the local repo; cannot push."
     exit 1
   fi
-  pod spec lint "$PODSPEC_NAME" --skip-import-validation --allow-warnings
-  pod trunk push "$PODSPEC_NAME" --skip-import-validation --allow-warnings
+  pod spec lint "${PODSPEC_PATH}" --skip-import-validation --allow-warnings
+  pod trunk push "${PODSPEC_PATH}" --skip-import-validation --allow-warnings
 fi
+
 popd >/dev/null
 
 cat <<EOF
