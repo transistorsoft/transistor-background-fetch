@@ -14,4 +14,7 @@ Pod::Spec.new do |s|
   s.documentation_url   = 'https://github.com/transistorsoft/transistor-background-fetch/docs/ios'
   s.frameworks          = 'UIKit'
   s.weak_frameworks     = 'BackgroundTasks'
+  s.source              = { :http => 'https://github.com/transistorsoft/transistor-background-fetch/releases/download/4.0.0/TSBackgroundFetch.xcframework.zip' }
+  s.homepage            = 'https://github.com/transistorsoft/transistor-background-fetch'
+  s.license             = { :type => 'MIT', :file => 'LICENSE' }
 end
