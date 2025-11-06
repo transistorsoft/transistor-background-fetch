@@ -8,7 +8,7 @@
 Pod::Spec.new do |s|
   s.name             = 'TSBackgroundFetch'
   s.version             = '4.0.0'
-  s.vendored_frameworks = 'TSBackgroundFetch.xcframework.xcframework'
+  s.vendored_frameworks = 'TSBackgroundFetch.xcframework'
   s.documentation_url   = 'https://github.com/transistorsoft/transistor-background-fetch/docs/ios'
   s.frameworks          = 'UIKit'
   s.weak_frameworks     = 'BackgroundTasks'
