@@ -73,14 +73,16 @@ static NSMutableArray *_tasks;
 }
 
 + (TSBGTask*) get:(NSString*)identifier {
+    TSBGTask *found = nil;
     @synchronized (_tasks) {
         for (TSBGTask *tsTask in _tasks) {
             if ([tsTask.identifier isEqualToString:identifier]) {
-                return tsTask;
+                found = tsTask;
+                break;
             }
         }
     }
-    return nil;
+    return found;
 }
 
 + (void) add:(TSBGTask*)tsTask {
