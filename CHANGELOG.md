@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## Unreleased
+* Hardening ios publishing script for guaranteed, oneshot release success for SPM and Cocoapods.
+* Remove obsolete files
+
+## 4.0.5 &mdash; 2025-11-08
+* Re-build, testing SPM releases and refresh in consumer app.
+
+## 4.0.4 &mdash; 2025-11-08
+* Re-build, testing SPM releases and refresh in consumer app.
+
 ## 4.0.3 &mdash; 2025-11-08
 * Re-build.  Invalid checksum.
 
