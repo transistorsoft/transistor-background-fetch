@@ -85,7 +85,7 @@ Options:
   --version X.Y.Z           Explicit version to publish/tag
   --bump patch|minor|major  Bump from latest remote semver tag
   --notes "text"            Release notes text
-  --dry-run                 Build + package only; no Git/tag/release
+  --dry-run                 Build and package only (no Git, no tags, no GitHub release).
   --no-build                Skip building (requires --xcframework-dir)
   --xcframework-dir PATH    Use existing .xcframework directory
   --push-cocoapods          Run pod lint + trunk push at the end
@@ -348,13 +348,39 @@ if [[ -z "${RELEASE_NOTES}" ]]; then
   RELEASE_NOTES="${BINARY_NAME} ${VERSION}"
 fi
 
+
 ASSET_URL="https://github.com/${PUBLIC_REPO}/releases/download/${VERSION}/${ZIP_NAME}"
 
-echo "▶ Create/Update GitHub Release + upload asset"
-gh release view "$VERSION" --repo "$PUBLIC_REPO" >/dev/null 2>&1 || \
-  gh release create "$VERSION" --repo "$PUBLIC_REPO" --title "$VERSION" --notes "$RELEASE_NOTES"
-gh release upload "$VERSION" "$ZIP_PATH" --repo "$PUBLIC_REPO" --clobber
-gh release edit "$VERSION" --repo "$PUBLIC_REPO" --draft=false >/dev/null 2>&1 || true
+# Preflight: guard against mutating an existing asset at the same tag (checksum-aware)
+SKIP_UPLOAD=0
+if gh release view "$VERSION" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+  # Does an asset with this exact name already exist?
+  if gh release view "$VERSION" --repo "$PUBLIC_REPO" --json assets --jq \
+     '.assets[]? | select(.name=="'"$ZIP_NAME"'") | .name' >/dev/null 2>&1; then
+    echo "ℹ️  Found existing asset '${ZIP_NAME}' on release ${VERSION}. Verifying it matches local build…"
+    # Download remote asset and compute its checksum
+    REMOTE_TMP="$(mktemp -d)"
+    REMOTE_ZIP="${REMOTE_TMP}/${ZIP_NAME}"
+    if ! curl -fsSL -o "$REMOTE_ZIP" "$ASSET_URL"; then
+      rm -rf "$REMOTE_TMP"
+      die "Failed to download existing remote asset for comparison."
+    fi
+    REMOTE_CHECKSUM="$(swift package compute-checksum "$REMOTE_ZIP")"
+    if [[ "$REMOTE_CHECKSUM" != "$CHECKSUM" ]]; then
+      if [[ "$RETAG" -ne 1 ]]; then
+        rm -rf "$REMOTE_TMP"
+        die "Remote asset differs from local but tag ${VERSION} already has an asset. Bump the version or re-run with --retag to intentionally replace."
+      else
+        echo "↺ Remote asset differs and --retag provided; will replace after retag."
+      fi
+    else
+      echo "✓ Remote asset matches local; will skip re-upload."
+      SKIP_UPLOAD=1
+    fi
+    rm -rf "$REMOTE_TMP"
+  fi
+fi
+
 
 echo "▶ Update Package.swift + ${PODSPEC_NAME}, commit, tag, push"
 
@@ -474,7 +500,50 @@ else
 fi
 popd >/dev/null
 
-# Optionally create PR and auto-merge
+# Create/Update GitHub Release + upload asset (after tag/branch push)
+echo "▶ Create/Update GitHub Release + upload asset (post-tag)"
+# Ensure the tag exists on origin before creating the release; --verify-tag enforces this.
+if ! gh release view "$VERSION" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+  gh release create "$VERSION" \
+    --repo "$PUBLIC_REPO" \
+    --title "$VERSION" \
+    --notes "$RELEASE_NOTES" \
+    --verify-tag
+else
+  # If a release already exists (possibly draft), make sure it refers to this tag and proceed.
+  gh release edit "$VERSION" --repo "$PUBLIC_REPO" --verify-tag >/dev/null 2>&1 || true
+fi
+
+# Upload asset (unless identical asset already present)
+if [[ "$SKIP_UPLOAD" -ne 1 ]]; then
+  gh release upload "$VERSION" "$ZIP_PATH" --repo "$PUBLIC_REPO" --clobber
+else
+  echo "↷ Skipping asset upload; remote asset already matches."
+fi
+
+# Post-upload verification: ensure the asset at the release URL matches the manifest checksum.
+echo "▶ Verifying uploaded asset checksum matches Package.swift"
+VERIFY_TMP="$(mktemp -d)"
+VERIFY_ZIP="${VERIFY_TMP}/${ZIP_NAME}"
+if ! curl -fsSL -o "$VERIFY_ZIP" "$ASSET_URL"; then
+  rm -rf "$VERIFY_TMP"
+  die "Failed to download uploaded asset for verification."
+fi
+UPLOADED_CHECKSUM="$(swift package compute-checksum "$VERIFY_ZIP")"
+rm -rf "$VERIFY_TMP"
+if [[ "$UPLOADED_CHECKSUM" != "$CHECKSUM" ]]; then
+  echo "❌ Uploaded asset checksum mismatch."
+  echo "   expected: $CHECKSUM"
+  echo "   actual  : $UPLOADED_CHECKSUM"
+  echo "   Leaving the GitHub Release in DRAFT state. Investigate and retry."
+  gh release edit "$VERSION" --repo "$PUBLIC_REPO" --draft=true >/dev/null 2>&1 || true
+  exit 1
+fi
+
+# All good: undraft the release
+gh release edit "$VERSION" --repo "$PUBLIC_REPO" --draft=false >/dev/null 2>&1 || true
+
+ # Optionally create PR and auto-merge
 if [[ "$CREATE_PR" -eq 1 || -n "$AUTO_MERGE" ]]; then
   if [[ "$CREATE_BRANCH" -ne 1 && -z "$BRANCH_NAME" ]]; then
     # Use current branch name if user didn't create a branch explicitly
@@ -541,3 +610,11 @@ Git:
   PR: $( [[ "$CREATE_PR" -eq 1 ]] && echo "requested" || echo "not created" )
 
 EOF
+
+echo ""
+echo "📌 SPM troubleshooting (for users): If Xcode reports 'checksum does not match', ask them to:"
+echo "    1) Xcode → File → Packages → Reset Package Caches, then Resolve Package Versions"
+echo "    2) Or run:"
+echo "       rm -rf ~/Library/Caches/org.swift.swiftpm"
+echo "       rm -rf ~/Library/Developer/Xcode/DerivedData"
+echo ""
