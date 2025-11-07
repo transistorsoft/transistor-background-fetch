@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+VERSION=""
+INCLUDE_CATALYST="${INCLUDE_CATALYST:-1}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version)
+      VERSION="$2"; shift 2 ;;
+    --no-catalyst)
+      INCLUDE_CATALYST=0; shift ;;
+    *)
+      echo "Unknown argument: $1"; exit 1 ;;
+  esac
+done
+
 # ------------------------------------------------------------
 # TSBackgroundFetch iOS: Build XCFramework
 #
@@ -20,7 +33,6 @@ PROJECT_PATH="${REPO_ROOT}/ios/TSBackgroundFetch/TSBackgroundFetch.xcodeproj"
 BINARY_NAME="${BINARY_NAME:-TSBackgroundFetch}"
 SCHEME="${SCHEME:-TSBackgroundFetch}"
 CONFIGURATION="${CONFIGURATION:-Release}"
-INCLUDE_CATALYST="${INCLUDE_CATALYST:-1}"
 
 OUT_ROOT="${REPO_ROOT}/build/Release-Publish/${BINARY_NAME}_XCFramework${VERSION:+_${VERSION}}"
 IOS_ARCHIVE="${OUT_ROOT}/iOS.xcarchive"
