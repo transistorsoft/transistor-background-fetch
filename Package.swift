@@ -7,8 +7,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "TSBackgroundFetch",
-            url: "https://github.com/transistorsoft/transistor-background-fetch/releases/download/4.0.3/TSBackgroundFetch.xcframework.zip",
-            checksum: "e0eb7583ef32cf1e8b5e1463751ce1d2ef437561b5a21125487240708ad3c6e2"
+            url: "https://github.com/transistorsoft/transistor-background-fetch/releases/download/4.0.4/TSBackgroundFetch.xcframework.zip",
+            checksum: "863e86a458776484b45af0d4a7079d667b7aa4930d09d5387e6fdabf54ff3743"
         )
     ]
 )
