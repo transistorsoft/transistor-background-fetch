@@ -5,6 +5,9 @@ set -euo pipefail
 # TSBackgroundFetch iOS — Build & Publish
 #
 # Usage:
+# ONESHOT RELEASE
+#   ./scripts/publish-ios.sh --version 4.0.4 --create-branch --push-cocoapods
+#
 #   ./scripts/publish-ios.sh --version 4.0.1 [--notes "msg"] [--push-cocoapods]
 #   ./scripts/publish-ios.sh --bump patch|minor|major [--notes "msg"]
 #   INCLUDE_CATALYST=0 ./scripts/publish-ios.sh --version 4.0.1
