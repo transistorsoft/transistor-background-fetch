@@ -29,6 +29,9 @@ DerivedData
 #
 #Pods/
 
+# Swift Package Manager
+.build/
+
 # Eclipse
 
 # built application files
