@@ -153,6 +153,7 @@ public class BackgroundFetch {
                     }
                     BGTask.cancel(mContext, config.getTaskId(), config.getJobId());
                     config.destroy(mContext);
+                    mConfig.remove(config.getTaskId());
                 }
                 BGTask.clear();
             }
@@ -166,6 +167,9 @@ public class BackgroundFetch {
             if (config != null) {
                 config.destroy(mContext);
                 BGTask.cancel(mContext, config.getTaskId(), config.getJobId());
+                synchronized (mConfig) {
+                    mConfig.remove(config.getTaskId());
+                }
             }
         }
     }
