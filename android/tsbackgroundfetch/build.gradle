@@ -1,22 +1,186 @@
+/**
+ * =============================================================================
+ *  📦 TSBackgroundFetch — Publishing Guide (Maven Central via Sonatype)
+ * =============================================================================
+ *
+ *  This module publishes a single artifact:
+ *    • Coordinate:  com.transistorsoft:tsbackgroundfetch:<VERSION>
+ *    • Variant:     release (variant-aware publishing)
+ *    • Extras:      sources.jar + minimal javadoc.jar (Central requirement)
+ *
+ *  0️⃣  Prerequisites (one‑time on this machine/CI)
+ *  ---------------------------------------------------------------------------
+ *  In `~/.gradle/gradle.properties` (or export the env vars shown on the right):
+ *
+ *    # Sonatype (OSSRH)
+ *    ossrhUsername=YOUR_OSSRH_USERNAME              # or env: OSSRH_USERNAME
+ *    ossrhPassword=YOUR_OSSRH_PASSWORD              # or env: OSSRH_PASSWORD
+ *    ossrhStagingProfileId=YOUR_STAGING_PROFILE_ID  # or env: OSSRH_STAGING_PROFILE_ID
+ *
+ *    # GPG signing for Maven Central releases (snapshots can be unsigned)
+ *    # Option A — in‑memory key (recommended for CI)
+ *    signingInMemoryKey=-----BEGIN PGP PRIVATE KEY BLOCK-----\n...
+ *    signingInMemoryKeyPassword=your-passphrase
+ *
+ *    # Option B — file‑based (matches TSLocationManager)
+ *    # signingKey=/absolute/path/to/private.asc     # ASCII‑armored
+ *    # signingPassword=your-passphrase
+ *
+ *  Notes:
+ *   • The root `android/build.gradle` owns the `nexusPublishing { sonatype { ... } }` config
+ *     and points to https://s01.oss.sonatype.org/ (same as TSLocationManager).
+ *   • If no signing credentials are present, release publishing will fail. Snapshots are OK.
+ *
+ *  1️⃣  Versioning (single source of truth)
+ *  ---------------------------------------------------------------------------
+ *  Versions are stored in:  `android/versioning/tsbackgroundfetch.properties`
+ *    VERSION_NAME=4.0.0          # e.g. 4.0.0 or 4.0.0-SNAPSHOT
+ *    VERSION_CODE=4000
+ *
+ *  Helpers (optional):
+ *    ./gradlew :tsbackgroundfetch:initVersionProps
+ *    ./gradlew publishAllPublicationsToSonatypeRepository
+ *    ./gradlew :tsbackgroundfetch:bumpVersionPatch   # or bumpVersionMinor / bumpVersionMajor
+ *
+ *  2️⃣  Build
+ *  ---------------------------------------------------------------------------
+ *    ./gradlew :tsbackgroundfetch:assembleRelease
+ *
+ *  3️⃣  Publish to Sonatype (choose one path)
+ *  ---------------------------------------------------------------------------
+ *  a) SNAPSHOT (when VERSION_NAME ends with -SNAPSHOT)
+ *     • Publishes directly to the snapshots repository (no staging/close/release)
+ *
+ *        ./gradlew :tsbackgroundfetch:publishSnapshotToSonatype
+ *        # or root-level: ./gradlew publishAllPublicationsToSonatypeRepository
+ *        # (these both publish directly to Central Portal snapshots; no staging)
+ *
+ *     → Appears immediately at Central Portal snapshots.
+ *
+ *  b) RELEASE (e.g., 4.0.0, 4.0.1, 4.1.0, ...)
+ *     • Requires GPG signing (see prerequisites above)
+ *     • Creates a staging repository, then closes & releases it to Maven Central
+ *
+ *        ./gradlew :tsbackgroundfetch:publishToSonatype \
+ *                  :tsbackgroundfetch:closeAndReleaseSonatypeStagingRepository
+ *
+ *     → Sync to Maven Central typically completes within ~30–60 minutes.
+ *
+ *  4️⃣  Local testing (optional)
+ *  ---------------------------------------------------------------------------
+ *  We publish to a local build repo at:  build/repo/com/transistorsoft/tsbackgroundfetch/<VERSION>
+ *  You can point a consumer’s `repositories { maven { url "$projectDir/build/repo" } }` at it
+ *  or use the (commented) tasks at the bottom to copy into sibling projects.
+ *
+ *  🧰 Troubleshooting
+ *  ---------------------------------------------------------------------------
+ *  • `[tsbackgroundfetch] ⚠️ No signing key configured` — add signing creds as shown above.
+ *  • 401/403 from Sonatype — verify `ossrhUsername/ossrhPassword` and `ossrhStagingProfileId`.
+ *  • `components.release` not found — ensure the `android { publishing { singleVariant("release") } }` block exists.
+ *  • Still on SNAPSHOT after bump — check `versioning/tsbackgroundfetch.properties` or override with
+ *      -PTS_BACKGROUND_FETCH_VERSION_NAME=4.0.0
+ *  • Verify artifacts post‑release:
+ *      https://repo1.maven.org/maven2/com/transistorsoft/tsbackgroundfetch/
+ *
+ *  📎 References
+ *  ---------------------------------------------------------------------------
+ *  • This file mirrors the working setup from TSLocationManager (dual modes for signing,
+ *    Sonatype config at root, in‑memory key support for CI, and variant‑aware publishing).
+ * =============================================================================
+ */
 apply plugin: 'com.android.library'
 apply plugin: 'maven-publish'
+apply plugin: 'signing'
+
+////
+// Maven coordinates & versioning (single source of truth)
+//
+import java.util.Properties
+
+def GROUP_ID = 'com.transistorsoft'
+def ARTIFACT_ID = 'tsbackgroundfetch'
+
+def versionPropsFile = rootProject.file("versioning/${ARTIFACT_ID}.properties")
+def versionProps = new Properties()
+if (versionPropsFile.exists()) {
+    versionProps.load(new FileInputStream(versionPropsFile))
+    ext.TS_BACKGROUND_FETCH_VERSION_NAME = versionProps['VERSION_NAME']
+    ext.TS_BACKGROUND_FETCH_VERSION_CODE = versionProps['VERSION_CODE']
+} else {
+    logger.lifecycle("[tsbackgroundfetch] version.properties not found; using Gradle properties TS_BACKGROUND_FETCH_VERSION_NAME=${project.findProperty('TS_BACKGROUND_FETCH_VERSION_NAME')} TS_BACKGROUND_FETCH_VERSION_CODE=${project.findProperty('TS_BACKGROUND_FETCH_VERSION_CODE')}")
+    if (project.findProperty('TS_BACKGROUND_FETCH_VERSION_NAME') != null) {
+        ext.TS_BACKGROUND_FETCH_VERSION_NAME = project.findProperty('TS_BACKGROUND_FETCH_VERSION_NAME')
+    }
+    if (project.findProperty('TS_BACKGROUND_FETCH_VERSION_CODE') != null) {
+        ext.TS_BACKGROUND_FETCH_VERSION_CODE = project.findProperty('TS_BACKGROUND_FETCH_VERSION_CODE')
+    }
+}
+
+// Allow -P overrides to take precedence
+if (project.hasProperty('TS_BACKGROUND_FETCH_VERSION_NAME')) {
+    ext.TS_BACKGROUND_FETCH_VERSION_NAME = project.property('TS_BACKGROUND_FETCH_VERSION_NAME').toString()
+    logger.lifecycle("[tsbackgroundfetch] Overriding VERSION_NAME via -P: ${ext.TS_BACKGROUND_FETCH_VERSION_NAME}")
+}
+if (project.hasProperty('TS_BACKGROUND_FETCH_VERSION_CODE')) {
+    ext.TS_BACKGROUND_FETCH_VERSION_CODE = project.property('TS_BACKGROUND_FETCH_VERSION_CODE').toString()
+    logger.lifecycle("[tsbackgroundfetch] Overriding VERSION_CODE via -P: ${ext.TS_BACKGROUND_FETCH_VERSION_CODE}")
+}
+
+// Publish coordinates used by Gradle
+group = GROUP_ID
+version = ext.TS_BACKGROUND_FETCH_VERSION_NAME
 
 afterEvaluate {
     publishing {
         publications {
-            tsbackgroundfetch(MavenPublication) {
-                println("[tsbackgroundfetch] ✅ publication")
+            release(MavenPublication) {
+                from components.release
                 groupId 'com.transistorsoft'
                 artifactId 'tsbackgroundfetch'
-                version VERSION_NAME
-                artifact("$buildDir/outputs/aar/tsbackgroundfetch-release.aar")
+                version TS_BACKGROUND_FETCH_VERSION_NAME
 
+                artifact androidJavadocsJar
+
+                pom {
+                    name = 'TSBackgroundFetch'
+                    description = 'Background fetch & periodic background tasks for Android (JobScheduler/AlarmManager).'
+                    url = 'https://github.com/transistorsoft/transistor-background-fetch'
+                    licenses {
+                        license {
+                            name = 'MIT License'
+                            url = 'https://opensource.org/licenses/MIT'
+                        }
+                    }
+                    developers {
+                        developer {
+                            id = 'transistorsoft'
+                            name = 'Transistor Software'
+                            email = 'info@transistorsoft.com'
+                        }
+                    }
+                    scm {
+                        url = 'https://github.com/transistorsoft/transistor-background-fetch'
+                        connection = 'scm:git:https://github.com/transistorsoft/transistor-background-fetch.git'
+                        developerConnection = 'scm:git:ssh://git@github.com/transistorsoft/transistor-background-fetch.git'
+                    }
+                }
             }
         }
         repositories {
             maven {
-                name = "tsbackgroundfetch"
-                url "${getLayout().buildDirectory.get()}/repo"
+                name = 'tsbackgroundfetch'
+                url = uri("${getLayout().buildDirectory.get()}/repo")
+            }
+            // Publish SNAPSHOTs directly to Central Portal snapshots (bypass staging)
+            if (TS_BACKGROUND_FETCH_VERSION_NAME?.toString()?.endsWith('-SNAPSHOT')) {
+                maven {
+                    name = 'CentralPortalSnapshots'
+                    url = uri('https://central.sonatype.com/repository/maven-snapshots/')
+                    credentials {
+                        username = findProperty('ossrhUsername') ?: System.getenv('OSSRH_USERNAME')
+                        password = findProperty('ossrhPassword') ?: System.getenv('OSSRH_PASSWORD')
+                    }
+                }
             }
         }
     }
@@ -28,6 +192,7 @@ android {
     defaultConfig {
         minSdkVersion 16
         targetSdkVersion rootProject.targetSdkVersion
+        consumerProguardFiles 'consumer-rules.pro'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
@@ -37,6 +202,13 @@ android {
         }
     }
 
+    // Enable variant-aware publishing so `components.release` exists
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            // withJavadocJar()  // optional; we attach a stub jar separately
+        }
+    }
 }
 
 dependencies {
@@ -51,11 +223,39 @@ dependencies {
 
 }
 
+// Maven coordinates moved to top (group/version set from versioning props)
+
+
+// Minimal Javadoc Jar (Android toolchains often fail Javadoc; Central requires a jar)
+tasks.register('androidJavadocsJar', Jar) {
+    archiveClassifier.set('javadoc')
+    from("$buildDir/emptyJavadoc")
+    doFirst {
+        file("$buildDir/emptyJavadoc").mkdirs()
+        file("$buildDir/emptyJavadoc/README.txt").text = 'See README.md for documentation.'
+    }
+}
+
 // Important with Gradle 8 to have Maven publish run assembleRelease
 tasks.withType(PublishToMavenRepository) { task ->
     dependsOn("assembleRelease")
 }
 
+// Convenience task to mirror TSLocationManager's snapshot publishing
+// Usage: ./gradlew :tsbackgroundfetch:publishSnapshotToSonatype
+tasks.register("publishSnapshotToSonatype") {
+    doFirst {
+        if (!TS_BACKGROUND_FETCH_VERSION_NAME?.toString()?.endsWith('-SNAPSHOT')) {
+            throw new GradleException("publishSnapshotToSonatype requires VERSION_NAME ending with -SNAPSHOT (current: ${TS_BACKGROUND_FETCH_VERSION_NAME})")
+        }
+    }
+    // Ensure the AAR is built before publishing
+    dependsOn("assembleRelease")
+    // Publish to the Central Portal snapshots repository (defined in publishing.repositories)
+    dependsOn("publishReleasePublicationToCentralPortalSnapshotsRepository")
+}
+
+/*
 // Build Release
 task buildRelease { task ->
     println("[tsbackgroundfetch] ✅ buildRelease")
@@ -83,8 +283,8 @@ task buildLocalRepository { task ->
     doLast {
         delete "${getLayout().buildDirectory.get()}/repo-local"
         copy {
-            from "${getLayout().buildDirectory.get()}/repo/$LIBRARY_PATH/$VERSION_NAME"
-            into "${getLayout().buildDirectory.get()}/repo-local/$LIBRARY_PATH/$VERSION_NAME"
+            from "${getLayout().buildDirectory.get()}/repo/$LIBRARY_PATH/${TS_BACKGROUND_FETCH_VERSION_NAME}"
+            into "${getLayout().buildDirectory.get()}/repo-local/$LIBRARY_PATH/${TS_BACKGROUND_FETCH_VERSION_NAME}"
         }
         copy {
             from("${getLayout().buildDirectory.get()}/repo/$LIBRARY_PATH/maven-metadata.xml")
@@ -146,5 +346,31 @@ task capacitorRelease { task ->
             from("${getLayout().buildDirectory.get()}/repo-local")
             into("$capacitorDir/android/libs")
         }
+    }
+}
+*/
+
+signing {
+    // Prefer in-memory key via Gradle props or env vars
+    def inMemKey  = findProperty('signingInMemoryKey') ?: System.getenv('SIGNING_IN_MEMORY_KEY')
+    def inMemPass = findProperty('signingInMemoryKeyPassword') ?: System.getenv('SIGNING_IN_MEMORY_KEY_PASSWORD')
+
+    // Fallback: file-based key (matches TSLocationManager)
+    def keyPath = findProperty('signingKey')
+    def filePass = findProperty('signingPassword')
+
+    if (inMemKey && inMemPass) {
+        useInMemoryPgpKeys(inMemKey, inMemPass)
+        sign publishing.publications
+    } else if (keyPath) {
+        def keyFile = file(keyPath)
+        if (keyFile.exists()) {
+            useInMemoryPgpKeys(keyFile.text, filePass as String)
+            sign publishing.publications
+        } else {
+            logger.warn("[tsbackgroundfetch] ⚠️  Signing key file not found at ${keyPath}")
+        }
+    } else {
+        logger.warn("[tsbackgroundfetch] ⚠️  No signing key configured; Sonatype publish will fail without signatures")
     }
 }

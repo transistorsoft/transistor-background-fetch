@@ -1,32 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ------------------------------------------------------------
-# TSBackgroundFetch iOS: Build + Publish (single script)
+# ============================================================
+# TSBackgroundFetch iOS — Build & Publish
 #
 # Usage:
-#   ./scripts/publish-ios.sh --version 4.0.0
-#   ./scripts/publish-ios.sh --bump patch
-#   INCLUDE_CATALYST=1 ./scripts/publish-ios.sh --version 4.0.0
+#   ./scripts/publish-ios.sh --version 4.0.1 [--notes "msg"] [--push-cocoapods]
+#   ./scripts/publish-ios.sh --bump patch|minor|major [--notes "msg"]
+#   INCLUDE_CATALYST=0 ./scripts/publish-ios.sh --version 4.0.1
+#   ./scripts/publish-ios.sh --version 4.0.1 --dry-run
 #
-# Flags:
-#   --version X.Y.Z
-#   --bump [patch|minor|major]
-#   --notes "text"
-#   --dry-run
-#   --no-build
-#   --xcframework-dir PATH
-#   --push-cocoapods
+# Options:
+#   --version X.Y.Z         Explicit version to publish/tag.
+#   --bump (patch|minor|major)
+#                          Bump from latest remote semver tag.
+#   --notes "text"          Release notes (defaults to "<BINARY> <VERSION>").
+#   --dry-run               Build and package only (no GitHub, no commits/tags).
+#   --no-build              Skip building xcframework (use --xcframework-dir).
+#   --xcframework-dir PATH  Use an existing .xcframework directory.
+#   --push-cocoapods        Run `pod spec lint` + `pod trunk push` at the end.
+#   --retag                 Overwrite the existing remote tag if already present.
 #
-# Defaults for Background Fetch:
+# Defaults:
 #   PUBLIC_REPO=transistorsoft/transistor-background-fetch
 #   BINARY_NAME=TSBackgroundFetch
-#   INCLUDE_CATALYST=1
 #   PODSPEC_NAME=TSBackgroundFetch.podspec
+#   INCLUDE_CATALYST=1
 #
-# Auth:
-#   Prefer gh CLI; otherwise set GITHUB_TOKEN
-# ------------------------------------------------------------
+# Requirements:
+#   - Xcode command-line tools
+#   - zip, swift
+#   - GitHub CLI (`gh`) authenticated for the PUBLIC_REPO owner
+#   - CocoaPods (`pod`) if using --push-cocoapods
+#
+# Notes:
+#   - This script operates directly on THIS repo (public).
+#   - The GitHub Release is created/updated and the xcframework zip is uploaded.
+#   - Package.swift and the podspec are updated in-place (commit + tag + push).
+# ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." &>/dev/null && pwd)"
@@ -36,11 +47,10 @@ BINARY_NAME="${BINARY_NAME:-TSBackgroundFetch}"
 INCLUDE_CATALYST="${INCLUDE_CATALYST:-1}"
 PODSPEC_NAME="${PODSPEC_NAME:-TSBackgroundFetch.podspec}"
 
-: "${GITHUB_TOKEN:=${GITHUB_TOKEN_IOS_PUBLISHING:-}}"
-
 has_gh() { command -v gh >/dev/null 2>&1; }
 die() { echo "❌ $*" >&2; exit 1; }
 
+# ----- args -----
 VERSION=""
 BUMP_MODE=""
 RELEASE_NOTES=""
@@ -50,7 +60,25 @@ XCFRAMEWORK_DIR_OVERRIDE=""
 PUSH_COCOAPODS=0
 RETAG=0
 
-usage() { sed -n '1,120p' "$0" | sed 's/^  //'; exit 1; }
+usage() {
+  cat <<USAGE
+Usage:
+  ./scripts/publish-ios.sh --version X.Y.Z [--notes "msg"] [--push-cocoapods] [--retag]
+  ./scripts/publish-ios.sh --bump patch|minor|major [--notes "msg"]
+  INCLUDE_CATALYST=0 ./scripts/publish-ios.sh --version X.Y.Z
+
+Options:
+  --version X.Y.Z           Explicit version to publish/tag
+  --bump patch|minor|major  Bump from latest remote semver tag
+  --notes "text"            Release notes text
+  --dry-run                 Build + package only; no Git/tag/release
+  --no-build                Skip building (requires --xcframework-dir)
+  --xcframework-dir PATH    Use existing .xcframework directory
+  --push-cocoapods          Run pod lint + trunk push at the end
+  --retag                   Overwrite existing remote tag if present
+USAGE
+  exit 1
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -67,9 +95,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-latest_public_tag() {
+latest_semver_tag() {
   git ls-remote --tags --refs "https://github.com/${PUBLIC_REPO}.git" 2>/dev/null \
-    | awk -F/ '{print $NF}' | sed 's/\^{}//' | sort -V | tail -1
+    | awk -F/ '{print $NF}' | sed 's/\^{}//' \
+    | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' \
+    | sort -V | tail -1
 }
 bump_semver() {
   local cur="$1" mode="$2"
@@ -86,14 +116,17 @@ resolve_version() {
   if [[ -n "$VERSION" && -n "$BUMP_MODE" ]]; then die "--version and --bump are mutually exclusive"; fi
   if [[ -n "$VERSION" ]]; then echo "$VERSION"; return; fi
   if [[ -n "$BUMP_MODE" ]]; then
-    local latest; latest="$(latest_public_tag)"
-    [[ -n "$latest" ]] || die "No tags in ${PUBLIC_REPO}. Use --version to set the first one."
+    local latest; latest="$(latest_semver_tag)"; [[ -n "$latest" ]] || latest='0.0.0'
     bump_semver "$latest" "$BUMP_MODE"; return
   fi
   if [[ -n "${MARKETING_VERSION:-}" ]]; then echo "$MARKETING_VERSION"; return; fi
-  local latest; latest="$(latest_public_tag)"; if [[ -n "$latest" ]]; then echo "$latest"; return; fi
+  local latest; latest="$(latest_semver_tag)"; [[ -n "$latest" ]] && { echo "$latest"; return; }
   echo "dev"
 }
+
+# Require gh auth
+has_gh || die "GitHub CLI 'gh' not found. Install from https://cli.github.com/"
+gh auth status >/dev/null 2>&1 || die "GitHub CLI is not authenticated. Run: gh auth login"
 
 VERSION="$(resolve_version)"
 echo "ℹ️  Version: ${VERSION}"
@@ -103,31 +136,24 @@ echo "ℹ️  Catalyst: $( [[ "$INCLUDE_CATALYST" == "1" ]] && echo ENABLED || e
 remote_tag_exists() {
   git ls-remote --tags "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${VERSION}" | grep -q "refs/tags/${VERSION}"
 }
-
 if remote_tag_exists && [[ "$RETAG" -ne 1 ]]; then
-  echo "❌ Tag '${VERSION}' already exists on remote ${PUBLIC_REPO}." >&2
-  echo "   Use --bump to pick a new version (e.g., --bump patch) or pass --retag to overwrite the tag." >&2
+  echo "❌ Tag '${VERSION}' already exists on remote ${PUBLIC_REPO}."
+  echo "   Use --bump (e.g., --bump patch) or pass --retag to overwrite."
   exit 1
 fi
 
 OUT_ROOT="${REPO_ROOT}/build/Release-Publish/${BINARY_NAME}_XCFramework_${VERSION}"
 XCFRAMEWORK_DIR_DEFAULT="${OUT_ROOT}/${BINARY_NAME}.xcframework"
-ZIP_DEFAULT="${OUT_ROOT}/${BINARY_NAME}.xcframework.zip"
 
 if [[ "$NO_BUILD" -eq 0 ]]; then
   echo "▶ Building XCFramework..."
   VERSION="$VERSION" INCLUDE_CATALYST="$INCLUDE_CATALYST" "${SCRIPT_DIR}/build-ios.sh"
 else
-  echo "↷ Skipping build (--no-build set)"
+  echo "↷ Skipping build (--no-build)"
 fi
 
-if [[ -n "$XCFRAMEWORK_DIR_OVERRIDE" ]]; then
-  XC_DIR="$XCFRAMEWORK_DIR_OVERRIDE"
-else
-  XC_DIR="$XCFRAMEWORK_DIR_DEFAULT"
-fi
+XC_DIR="${XCFRAMEWORK_DIR_OVERRIDE:-$XCFRAMEWORK_DIR_DEFAULT}"
 [[ -d "$XC_DIR" ]] || die "XCFramework not found at: $XC_DIR (use --xcframework-dir to override)"
-
 echo "ℹ️  XCFramework: $XC_DIR"
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -148,37 +174,13 @@ echo "   checksum: $CHECKSUM"
 
 ASSET_URL="https://github.com/${PUBLIC_REPO}/releases/download/${VERSION}/${ZIP_NAME}"
 
-if has_gh; then
-  echo "ℹ️  Using gh CLI authentication."
-elif [[ -n "${GITHUB_TOKEN}" ]]; then
-  echo "ℹ️  Using GITHUB_TOKEN."
-else
-  echo "ℹ️  No gh auth detected and no GITHUB_TOKEN set; API calls will fail."
-fi
-
 echo "▶ Create/Update GitHub Release + upload asset"
-if has_gh; then
-  gh release view "$VERSION" --repo "$PUBLIC_REPO" >/dev/null 2>&1 || \
-    gh release create "$VERSION" --repo "$PUBLIC_REPO" --title "$VERSION" --notes "${RELEASE_NOTES:-${BINARY_NAME} ${VERSION}}"
-  gh release upload "$VERSION" "$ZIP_PATH" --repo "$PUBLIC_REPO" --clobber
-else
-  [[ -n "${GITHUB_TOKEN}" ]] || die "No gh CLI and no GITHUB_TOKEN"
-  rel_json=$(curl -sSf -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${PUBLIC_REPO}/releases/tags/${VERSION}" || true)
-  if echo "$rel_json" | grep -q '"message": "Not Found"'; then
-    rel_json=$(curl -sSf -X POST -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
-      "https://api.github.com/repos/${PUBLIC_REPO}/releases" \
-      -d "{\"tag_name\":\"${VERSION}\",\"name\":\"${VERSION}\",\"prerelease\":$( [[ "$VERSION" == *-* ]] && echo true || echo false ),\"body\":\"${RELEASE_NOTES:-${BINARY_NAME} ${VERSION}}\"}")
-  fi
-  upload_url=$(echo "$rel_json" | python3 - "$ZIP_NAME" <<'PY'
-import sys, json; j=json.load(sys.stdin); print(j["upload_url"].split("{")[0])
-PY
-)
-  curl -sSf -X POST -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/zip" \
-    --data-binary @"$ZIP_PATH" "${upload_url}?name=${ZIP_NAME}" >/dev/null
-fi
+gh release view "$VERSION" --repo "$PUBLIC_REPO" >/dev/null 2>&1 || \
+  gh release create "$VERSION" --repo "$PUBLIC_REPO" --title "$VERSION" --notes "${RELEASE_NOTES:-${BINARY_NAME} ${VERSION}}"
+gh release upload "$VERSION" "$ZIP_PATH" --repo "$PUBLIC_REPO" --clobber
+gh release edit "$VERSION" --repo "$PUBLIC_REPO" --draft=false >/dev/null 2>&1 || true
 
-echo "▶ Update local repo (in-place): Package.swift + podspec, commit, tag, push"
+echo "▶ Update Package.swift + ${PODSPEC_NAME}, commit, tag, push"
 
 PACKAGE_SWIFT="${REPO_ROOT}/Package.swift"
 PODSPEC_PATH="${REPO_ROOT}/${PODSPEC_NAME}"
@@ -234,18 +236,19 @@ sed -i '' "s|checksum: \".*\"|checksum: \"${CHECKSUM}\"|g" "${PACKAGE_SWIFT}"
 if [[ -n "${PODSPEC_NAME}" && -f "${PODSPEC_PATH}" ]]; then
   ruby - "${PODSPEC_PATH}" "${VERSION}" "${ASSET_URL}" <<'RUBY'
 path, version, url = ARGV
+zip = File.basename(url)
+xc_base = zip.sub(/\.xcframework\.zip\z/, '')
+vendored = "#{xc_base}.xcframework"
 txt = File.read(path)
 replacements = {
   /^\s*s\.version\s*=.*$/i            => "  s.version             = '#{version}'",
   /^\s*s\.source\s*=.*$/i             => "  s.source              = { :http => '#{url}' }",
   /^\s*s\.homepage\s*=.*$/i           => "  s.homepage            = 'https://github.com/transistorsoft/transistor-background-fetch'",
   /^\s*s\.documentation_url\s*=.*$/i  => "  s.documentation_url   = 'https://github.com/transistorsoft/transistor-background-fetch/docs/ios'",
-  # License stays open-source (MIT) for this project
   /^\s*s\.license\s*=.*$/i            => "  s.license             = { :type => 'MIT', :file => 'LICENSE' }",
-  # Ensure frameworks are correct for BF (no sqlite/z/c++)
   /^\s*s\.frameworks\s*=.*$/i         => "  s.frameworks          = 'UIKit'",
   /^\s*s\.weak_frameworks\s*=.*$/i    => "  s.weak_frameworks     = 'BackgroundTasks'",
-  /^\s*s\.vendored_frameworks\s*=.*$/i=> "  s.vendored_frameworks = '#{File.basename(url,'.zip')}.xcframework'",
+  /^\s*s\.vendored_frameworks\s*=.*$/i=> "  s.vendored_frameworks = '#{vendored}'",
   /^\s*s\.summary\s*=.*$/i            => "  s.summary             = 'Background fetch & periodic background tasks for iOS.'",
   /^\s*s\.description\s*=.*$/i        => "  s.description         = 'Lightweight, open-source Background Fetch that wraps BGTaskScheduler / background fetch to deliver reliable periodic callbacks.'",
   /^\s*s\.author\s*=.*$/i             => "  s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }",
@@ -260,41 +263,16 @@ replacements.each do |pattern, replacement|
     txt.sub!(/\nend\s*\z/m) { "\n#{replacement}\nend" }
   end
 end
-
-# Remove legacy source_files when using a vendored binary
 txt.gsub!(/^\s*s\.source_files\s*=.*$/i, '')
-
-# Ensure required keys exist; if missing, inject them before `end`
-ensure_lines = [
-  "  s.summary             = 'Background fetch & periodic background tasks for iOS.'",
-  "  s.description         = 'Lightweight, open-source Background Fetch that wraps BGTaskScheduler / background fetch to deliver reliable periodic callbacks.'",
-  "  s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }",
-  "  s.ios.deployment_target = '12.0'",
-  "  s.static_framework    = true",
-  "  s.pod_target_xcconfig = { 'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'YES' }",
-  "  s.frameworks          = 'UIKit'",
-  "  s.weak_frameworks     = 'BackgroundTasks'",
-  "  s.vendored_frameworks = '#{File.basename(url, '.zip')}.xcframework'"
-]
-ensure_lines.each do |line|
-  unless txt.include?(line)
-    txt.sub!(/\nend\s*\z/m) { "\n#{line}\nend" }
-  end
-end
-
-# Normalize whitespace created by deletions
 txt.gsub!(/\n{2,}/, "\n")
-
 File.write(path, txt)
 RUBY
 fi
 
-# Commit, tag, and push from the current repo
+# Commit, tag, push
 pushd "${REPO_ROOT}" >/dev/null
-
 git add "${PACKAGE_SWIFT}" || true
 [[ -n "${PODSPEC_NAME}" && -f "${PODSPEC_PATH}" ]] && git add "${PODSPEC_PATH}" || true
-
 git commit -m "chore: ${BINARY_NAME} ${VERSION} (url + checksum)" || echo "No file changes"
 
 if [[ "$RETAG" -eq 1 ]]; then
@@ -303,28 +281,20 @@ if [[ "$RETAG" -eq 1 ]]; then
   git push --delete origin "${VERSION}" >/dev/null 2>&1 || true
   git push origin "${VERSION}"
 else
-  # Create tag only if it doesn't already exist locally
   if ! git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
     git tag "${VERSION}"
   fi
   git push origin "${VERSION}" || true
 fi
+popd >/dev/null
 
 if [[ "${PUSH_COCOAPODS}" -eq 1 ]]; then
   echo "▶ Pushing to CocoaPods Trunk..."
-  if ! command -v pod >/dev/null 2>&1; then
-    echo "❌ CocoaPods 'pod' CLI not found. Install with: sudo gem install cocoapods"
-    exit 1
-  fi
-  if [[ -z "${PODSPEC_NAME}" || ! -f "${PODSPEC_PATH}" ]]; then
-    echo "❌ Podspec '${PODSPEC_NAME}' not found in the local repo; cannot push."
-    exit 1
-  fi
+  command -v pod >/dev/null 2>&1 || die "CocoaPods CLI not found. Install with: sudo gem install cocoapods"
+  [[ -f "${PODSPEC_PATH}" ]] || die "Podspec '${PODSPEC_NAME}' not found."
   pod spec lint "${PODSPEC_PATH}" --skip-import-validation --allow-warnings
   pod trunk push "${PODSPEC_PATH}" --skip-import-validation --allow-warnings
 fi
-
-popd >/dev/null
 
 cat <<EOF
 
@@ -337,8 +307,7 @@ SPM (Package.swift):
       checksum: "${CHECKSUM}"
   )
 
-CocoaPods (if pushing to trunk):
-  pod spec lint ${PODSPEC_NAME:-TSBackgroundFetch.podspec} --skip-import-validation --allow-warnings
-  pod trunk push ${PODSPEC_NAME:-TSBackgroundFetch.podspec} --skip-import-validation --allow-warnings
+CocoaPods:
+  pod '${BINARY_NAME}', '~> ${VERSION}'
 
 EOF
