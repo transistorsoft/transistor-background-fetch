@@ -52,7 +52,6 @@
 		835318361D5220A3005738CD /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8353183F1D5220F6005738CD /* TSBackgroundFetch.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TSBackgroundFetch.h; sourceTree = "<group>"; };
 		835318401D5220F6005738CD /* TSBackgroundFetch.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TSBackgroundFetch.m; sourceTree = "<group>"; };
-		835318C21D525975005738CD /* TSBackgroundFetch.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = TSBackgroundFetch.framework; sourceTree = "<group>"; };
 		836DCC9B2BAB1869009BA3F7 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		83D531DE23D7463A0079D172 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.15.sdk/System/Library/Frameworks/BackgroundTasks.framework; sourceTree = DEVELOPER_DIR; };
 		83D531E023D9E2030079D172 /* TSBGTask.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TSBGTask.h; sourceTree = "<group>"; };
@@ -81,7 +80,6 @@
 		8353181B1D5220A3005738CD = {
 			isa = PBXGroup;
 			children = (
-				835318C21D525975005738CD /* TSBackgroundFetch.framework */,
 				835318271D5220A3005738CD /* TSBackgroundFetch */,
 				835318331D5220A3005738CD /* TSBackgroundFetchTests */,
 				835318261D5220A3005738CD /* Products */,
