@@ -9,6 +9,8 @@ set -euo pipefail
 #   ./scripts/publish-ios.sh --bump patch|minor|major [--notes "msg"]
 #   INCLUDE_CATALYST=0 ./scripts/publish-ios.sh --version 4.0.1
 #   ./scripts/publish-ios.sh --version 4.0.1 --dry-run
+#   ./scripts/publish-ios.sh --version 4.0.2 --create-branch --create-pr
+#   ./scripts/publish-ios.sh --version 4.0.2 --create-branch --branch-name releases/4.0.2 --base main --create-pr --auto-merge squash
 #
 # Options:
 #   --version X.Y.Z         Explicit version to publish/tag.
@@ -20,6 +22,11 @@ set -euo pipefail
 #   --xcframework-dir PATH  Use an existing .xcframework directory.
 #   --push-cocoapods        Run `pod spec lint` + `pod trunk push` at the end.
 #   --retag                 Overwrite the existing remote tag if already present.
+#   --create-branch          Create and switch to a release branch before making edits (default name: releases/<VERSION>)
+#   --branch-name NAME       Override the branch name used with --create-branch
+#   --base BRANCH            Base branch to branch from and target PR to (auto-detects origin/HEAD)
+#   --create-pr              Open a GitHub pull request from the release branch to --base
+#   --auto-merge MODE        Auto-merge the PR with MODE: merge|squash|rebase (requires --create-pr)
 #
 # Defaults:
 #   PUBLIC_REPO=transistorsoft/transistor-background-fetch
@@ -59,6 +66,13 @@ NO_BUILD=0
 XCFRAMEWORK_DIR_OVERRIDE=""
 PUSH_COCOAPODS=0
 RETAG=0
+CREATE_BRANCH=0
+BRANCH_NAME=""
+BASE_BRANCH=""
+CREATE_PR=0
+AUTO_MERGE=""
+VERSION_SOURCE=""
+SKIP_TAG_PUSH=0
 
 usage() {
   cat <<USAGE
@@ -76,6 +90,16 @@ Options:
   --xcframework-dir PATH    Use existing .xcframework directory
   --push-cocoapods          Run pod lint + trunk push at the end
   --retag                   Overwrite existing remote tag if present
+  --create-branch            Create and switch to a release branch (default: releases/<VERSION>)
+  --branch-name NAME         Override branch name when using --create-branch
+  --base BRANCH              Base branch to branch from / PR target (auto-detected)
+  --create-pr                Open a GitHub PR from the release branch to --base
+  --auto-merge MODE          Auto-merge the PR (merge|squash|rebase); implies --create-pr
+
+Notes:
+  If --version/--bump are omitted, the script will try to read the latest version
+  heading from CHANGELOG.md (e.g., "## 4.0.2") and prompt:
+    > Publish version X.Y.Z? [y/N]
 USAGE
   exit 1
 }
@@ -90,6 +114,11 @@ while [[ $# -gt 0 ]]; do
     --xcframework-dir) XCFRAMEWORK_DIR_OVERRIDE="${2:-}"; shift 2;;
     --push-cocoapods) PUSH_COCOAPODS=1; shift;;
     --retag) RETAG=1; shift;;
+    --create-branch) CREATE_BRANCH=1; shift;;
+    --branch-name) BRANCH_NAME="${2:-}"; shift 2;;
+    --base) BASE_BRANCH="${2:-}"; shift 2;;
+    --create-pr) CREATE_PR=1; shift;;
+    --auto-merge) AUTO_MERGE="${2:-}"; shift 2;;
     -h|--help) usage;;
     *) echo "Unknown arg: $1"; usage;;
   esac
@@ -112,15 +141,57 @@ bump_semver() {
     *) die "Unknown bump mode: $mode";;
   esac
 }
+
+# Read top version from CHANGELOG.md
+version_from_changelog() {
+  local changelog="${REPO_ROOT}/CHANGELOG.md"
+  if [[ -f "$changelog" ]]; then
+    # Find the first heading like "## 4.0.2" or "## v4.0.2"
+    local v
+    v="$(grep -E '^\s*##\s*v?[0-9]+\.[0-9]+\.[0-9]+' "$changelog" | head -1 | sed -E 's/^\s*##\s*v?([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')"
+    [[ -n "$v" ]] && echo "$v"
+  fi
+}
+
 resolve_version() {
   if [[ -n "$VERSION" && -n "$BUMP_MODE" ]]; then die "--version and --bump are mutually exclusive"; fi
-  if [[ -n "$VERSION" ]]; then echo "$VERSION"; return; fi
+
+  if [[ -n "$VERSION" ]]; then
+    VERSION_SOURCE="arg"
+    echo "$VERSION"
+    return
+  fi
+
   if [[ -n "$BUMP_MODE" ]]; then
     local latest; latest="$(latest_semver_tag)"; [[ -n "$latest" ]] || latest='0.0.0'
-    bump_semver "$latest" "$BUMP_MODE"; return
+    VERSION_SOURCE="bump"
+    bump_semver "$latest" "$BUMP_MODE"
+    return
   fi
-  if [[ -n "${MARKETING_VERSION:-}" ]]; then echo "$MARKETING_VERSION"; return; fi
-  local latest; latest="$(latest_semver_tag)"; [[ -n "$latest" ]] && { echo "$latest"; return; }
+
+  if [[ -n "${MARKETING_VERSION:-}" ]]; then
+    VERSION_SOURCE="marketing"
+    echo "$MARKETING_VERSION"
+    return
+  fi
+
+  # Try CHANGELOG.md as an interactive suggestion
+  local from_changelog; from_changelog="$(version_from_changelog || true)"
+  if [[ -n "$from_changelog" ]]; then
+    VERSION_SOURCE="changelog"
+    echo "$from_changelog"
+    return
+  fi
+
+  # Fallback to latest remote semver tag
+  local latest; latest="$(latest_semver_tag)"
+  if [[ -n "$latest" ]]; then
+    VERSION_SOURCE="remote"
+    echo "$latest"
+    return
+  fi
+
+  VERSION_SOURCE="dev"
   echo "dev"
 }
 
@@ -128,18 +199,99 @@ resolve_version() {
 has_gh || die "GitHub CLI 'gh' not found. Install from https://cli.github.com/"
 gh auth status >/dev/null 2>&1 || die "GitHub CLI is not authenticated. Run: gh auth login"
 
+
 VERSION="$(resolve_version)"
+
+# Coerce VERSION to pure semver (e.g., "## 4.0.2 — 2025-11-07" -> "4.0.2")
+if [[ -n "${VERSION:-}" ]]; then
+  if [[ "$VERSION" =~ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+    VERSION="${BASH_REMATCH[1]}"
+  fi
+fi
+
+# If version was inferred from CHANGELOG, prompt for confirmation
+if [[ "$VERSION_SOURCE" == "changelog" ]]; then
+  echo "⚙️  Detected version ${VERSION} from CHANGELOG.md"
+  read -r -p "> Publish version ${VERSION}? [y/N] " _ans
+  case "${_ans:-}" in
+    y|Y|yes|YES)
+      ;;
+    *)
+      die "Aborted. Provide --version X.Y.Z or use --bump patch|minor|major."
+      ;;
+  esac
+fi
+
 echo "ℹ️  Version: ${VERSION}"
 echo "ℹ️  Public repo: ${PUBLIC_REPO}"
 echo "ℹ️  Catalyst: $( [[ "$INCLUDE_CATALYST" == "1" ]] && echo ENABLED || echo DISABLED )"
 
+# Determine default base branch if not provided
+detect_default_branch() {
+  # Try to read origin/HEAD first
+  local head
+  head="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [[ -n "$head" ]]; then
+    echo "${head#origin/}"
+    return
+  fi
+  # Fallbacks
+  if git show-ref --verify --quiet refs/remotes/origin/main; then echo "main"; return; fi
+  if git show-ref --verify --quiet refs/remotes/origin/master; then echo "master"; return; fi
+  # Last resort: current branch
+  git rev-parse --abbrev-ref HEAD
+}
+
+if [[ -z "$BASE_BRANCH" ]]; then
+  BASE_BRANCH="$(detect_default_branch)"
+fi
+echo "ℹ️  Base branch: ${BASE_BRANCH}"
+
+# Optionally create and switch to a release branch before making edits
+if [[ "$CREATE_BRANCH" -eq 1 ]]; then
+  # Default branch name derived from VERSION; ensure it's safe for git
+  if [[ -z "$BRANCH_NAME" ]]; then
+    _ver_for_branch="$VERSION"
+    # Keep only [A-Za-z0-9._-] in the branch suffix; replace others with '-'
+    _ver_for_branch="$(echo "$_ver_for_branch" | sed -E 's/[^A-Za-z0-9._-]+/-/g')"
+    BRANCH_NAME="releases/${_ver_for_branch}"
+  fi
+  echo "▶ Creating release branch '${BRANCH_NAME}' from '${BASE_BRANCH}'"
+  pushd "${REPO_ROOT}" >/dev/null
+  git fetch origin "${BASE_BRANCH}" --quiet || true
+  if git rev-parse --verify --quiet "refs/heads/${BRANCH_NAME}"; then
+    git switch "${BRANCH_NAME}"
+  else
+    git switch -c "${BRANCH_NAME}" "origin/${BASE_BRANCH}"
+  fi
+  popd >/dev/null
+fi
+
 remote_tag_exists() {
   git ls-remote --tags "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${VERSION}" | grep -q "refs/tags/${VERSION}"
 }
-if remote_tag_exists && [[ "$RETAG" -ne 1 ]]; then
-  echo "❌ Tag '${VERSION}' already exists on remote ${PUBLIC_REPO}."
-  echo "   Use --bump (e.g., --bump patch) or pass --retag to overwrite."
-  exit 1
+if remote_tag_exists; then
+  if [[ "$RETAG" -ne 1 ]]; then
+    # Compare remote tag target with local (if present). If they differ, abort with guidance.
+    remote_sha="$(git ls-remote --tags "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${VERSION}" | awk '{print $1}')"
+    local_sha=""
+    if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null 2>&1; then
+      # Peel annotated tags to the commit object
+      local_sha="$(git rev-parse -q "${VERSION}^{}" 2>/dev/null || true)"
+    fi
+
+    if [[ -n "$local_sha" && "$local_sha" != "$remote_sha" ]]; then
+      echo "❌ Tag '${VERSION}' already exists on remote and points to a different commit."
+      echo "   remote: ${remote_sha}"
+      echo "   local : ${local_sha}"
+      echo "   Use --retag to overwrite the remote tag, or bump with --bump patch|minor|major."
+      exit 1
+    fi
+
+    # If remote exists and matches local (or local tag absent), skip tag push silently.
+    echo "ℹ️  Tag '${VERSION}' already exists on remote and matches; will skip re-pushing this tag."
+    SKIP_TAG_PUSH=1
+  fi
 fi
 
 OUT_ROOT="${REPO_ROOT}/build/Release-Publish/${BINARY_NAME}_XCFramework_${VERSION}"
@@ -172,11 +324,35 @@ echo "▶ Computing SPM checksum"
 CHECKSUM="$(swift package compute-checksum "$ZIP_PATH")"
 echo "   checksum: $CHECKSUM"
 
+# ▶ Derive release notes from CHANGELOG.md if not provided
+if [[ -z "${RELEASE_NOTES}" && -f "${REPO_ROOT}/CHANGELOG.md" ]]; then
+  RELEASE_NOTES="$(ruby - "${REPO_ROOT}/CHANGELOG.md" "${VERSION}" <<'RUBY'
+path, version = ARGV
+text = File.read(path)
+# Match headings like: "## 4.0.2 — 2025-11-07" or "## 4.0.2 &mdash; 2025-11-07" or just "## 4.0.2"
+heading_regex = /^##\s*v?#{Regexp.escape(version)}\b.*$/i
+lines = text.lines
+start = lines.index { |l| l =~ heading_regex }
+if start
+  # Find next heading starting with '## '
+  nxt = (start + 1 ... lines.length).find { |i| lines[i].start_with?("## ") } || lines.length
+  body = lines[(start + 1)...nxt].join.strip
+  puts body unless body.empty?
+end
+RUBY
+)"
+fi
+
+# Fallback if no notes resolved
+if [[ -z "${RELEASE_NOTES}" ]]; then
+  RELEASE_NOTES="${BINARY_NAME} ${VERSION}"
+fi
+
 ASSET_URL="https://github.com/${PUBLIC_REPO}/releases/download/${VERSION}/${ZIP_NAME}"
 
 echo "▶ Create/Update GitHub Release + upload asset"
 gh release view "$VERSION" --repo "$PUBLIC_REPO" >/dev/null 2>&1 || \
-  gh release create "$VERSION" --repo "$PUBLIC_REPO" --title "$VERSION" --notes "${RELEASE_NOTES:-${BINARY_NAME} ${VERSION}}"
+  gh release create "$VERSION" --repo "$PUBLIC_REPO" --title "$VERSION" --notes "$RELEASE_NOTES"
 gh release upload "$VERSION" "$ZIP_PATH" --repo "$PUBLIC_REPO" --clobber
 gh release edit "$VERSION" --repo "$PUBLIC_REPO" --draft=false >/dev/null 2>&1 || true
 
@@ -275,18 +451,49 @@ git add "${PACKAGE_SWIFT}" || true
 [[ -n "${PODSPEC_NAME}" && -f "${PODSPEC_PATH}" ]] && git add "${PODSPEC_PATH}" || true
 git commit -m "chore: ${BINARY_NAME} ${VERSION} (url + checksum)" || echo "No file changes"
 
-if [[ "$RETAG" -eq 1 ]]; then
-  echo "↺ Retagging ${VERSION} (deleting remote tag if present)…"
-  git tag -f "${VERSION}"
-  git push --delete origin "${VERSION}" >/dev/null 2>&1 || true
-  git push origin "${VERSION}"
+# Push branch if created
+if [[ "$CREATE_BRANCH" -eq 1 ]]; then
+  echo "▶ Pushing branch ${BRANCH_NAME} to origin"
+  git push -u origin "${BRANCH_NAME}" || true
+fi
+
+if [[ "$SKIP_TAG_PUSH" -eq 1 ]]; then
+  echo "↷ Skipping tag creation/push; remote '${VERSION}' already exists and matches."
 else
-  if ! git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
-    git tag "${VERSION}"
+  if [[ "$RETAG" -eq 1 ]]; then
+    echo "↺ Retagging ${VERSION} (deleting remote tag if present)…"
+    git tag -f "${VERSION}"
+    git push --delete origin "${VERSION}" >/dev/null 2>&1 || true
+    git push origin "${VERSION}"
+  else
+    if ! git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
+      git tag "${VERSION}"
+    fi
+    git push origin "${VERSION}" || true
   fi
-  git push origin "${VERSION}" || true
 fi
 popd >/dev/null
+
+# Optionally create PR and auto-merge
+if [[ "$CREATE_PR" -eq 1 || -n "$AUTO_MERGE" ]]; then
+  if [[ "$CREATE_BRANCH" -ne 1 && -z "$BRANCH_NAME" ]]; then
+    # Use current branch name if user didn't create a branch explicitly
+    BRANCH_NAME="$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD)"
+  fi
+  echo "▶ Creating PR from '${BRANCH_NAME}' → '${BASE_BRANCH}'"
+  gh pr create --repo "$PUBLIC_REPO" --base "$BASE_BRANCH" --head "$BRANCH_NAME" --title "release: ${VERSION}" --body "$RELEASE_NOTES" || true
+  if [[ -n "$AUTO_MERGE" ]]; then
+    case "$AUTO_MERGE" in
+      merge|squash|rebase) ;;
+      *) echo "⚠️  Invalid --auto-merge mode: $AUTO_MERGE (use merge|squash|rebase)"; AUTO_MERGE="";;
+    esac
+    if [[ -n "$AUTO_MERGE" ]]; then
+      echo "▶ Enabling auto-merge (${AUTO_MERGE})"
+      gh pr merge --repo "$PUBLIC_REPO" --auto --"$AUTO_MERGE" || true
+    fi
+  fi
+fi
+
 
 if [[ "${PUSH_COCOAPODS}" -eq 1 ]]; then
   echo "▶ Pushing to CocoaPods Trunk..."
@@ -294,6 +501,24 @@ if [[ "${PUSH_COCOAPODS}" -eq 1 ]]; then
   [[ -f "${PODSPEC_PATH}" ]] || die "Podspec '${PODSPEC_NAME}' not found."
   pod spec lint "${PODSPEC_PATH}" --skip-import-validation --allow-warnings
   pod trunk push "${PODSPEC_PATH}" --skip-import-validation --allow-warnings
+fi
+
+# Remind about CocoaPods if we didn't push it this run
+if [[ "${PUSH_COCOAPODS}" -eq 0 ]]; then
+  if [[ -n "${PODSPEC_NAME}" && -f "${PODSPEC_PATH}" ]]; then
+    echo ""
+    echo "ℹ️  CocoaPods push skipped (no --push-cocoapods)."
+    echo "    If you intend to publish ${BINARY_NAME} ${VERSION} to CocoaPods, run:"
+    echo "      pod spec lint \"${PODSPEC_PATH}\" --skip-import-validation --allow-warnings"
+    echo "      pod trunk push \"${PODSPEC_PATH}\" --skip-import-validation --allow-warnings"
+    echo "    (Or rerun this script with --push-cocoapods to automate these steps.)"
+    echo ""
+  else
+    echo ""
+    echo "ℹ️  CocoaPods push skipped, and no podspec was found at '${PODSPEC_PATH}'."
+    echo "    If you plan to publish to CocoaPods, ensure the podspec exists and rerun with --push-cocoapods."
+    echo ""
+  fi
 fi
 
 cat <<EOF
@@ -309,5 +534,10 @@ SPM (Package.swift):
 
 CocoaPods:
   pod '${BINARY_NAME}', '~> ${VERSION}'
+
+Git:
+  Branch (optional): ${BRANCH_NAME:-<not created>}
+  Base: ${BASE_BRANCH}
+  PR: $( [[ "$CREATE_PR" -eq 1 ]] && echo "requested" || echo "not created" )
 
 EOF
