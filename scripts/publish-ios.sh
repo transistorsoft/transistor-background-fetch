@@ -302,7 +302,7 @@ XCFRAMEWORK_DIR_DEFAULT="${OUT_ROOT}/${BINARY_NAME}.xcframework"
 
 if [[ "$NO_BUILD" -eq 0 ]]; then
   echo "▶ Building XCFramework..."
-  VERSION="$VERSION" INCLUDE_CATALYST="$INCLUDE_CATALYST" "${SCRIPT_DIR}/build-ios.sh"
+  VERSION="$VERSION" INCLUDE_CATALYST="$INCLUDE_CATALYST" "${SCRIPT_DIR}/build-ios.sh" --version "$VERSION"
 else
   echo "↷ Skipping build (--no-build)"
 fi

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION=""
+VERSION="${VERSION:-}"
 INCLUDE_CATALYST="${INCLUDE_CATALYST:-1}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
