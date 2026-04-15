@@ -38,7 +38,7 @@ static NSMutableArray *_tasks;
             [task setTaskCompletedWithSuccess:NO];
             return;
         }
-        [tsTask setTask:(BGProcessingTask*)task];
+        [tsTask setTask:task];
     }];
 }
 
@@ -136,7 +136,8 @@ static NSMutableArray *_tasks;
     self = [self init];
     if (self) {
         _identifier = [config objectForKey:@"identifier"];
-        _delay = [[config objectForKey:@"delay"] longValue];
+        _type = [[config objectForKey:@"type"] integerValue];
+        _delay = [[config objectForKey:@"delay"] doubleValue];
         _periodic = [[config objectForKey:@"periodic"] boolValue];
         _enabled = [[config objectForKey:@"enabled"] boolValue];
         if ([config objectForKey:@"requiresExternalPower"]) {
@@ -165,7 +166,6 @@ static NSMutableArray *_tasks;
         
         NSError *error = nil;
         BGProcessingTaskRequest *request = [self buildRequest];
-        // TODO Configurable.
         request.requiresExternalPower = _requiresExternalPower;
         request.requiresNetworkConnectivity = _requiresNetworkConnectivity;
         request.earliestBeginDate = [NSDate dateWithTimeIntervalSinceNow:_delay];
@@ -185,18 +185,8 @@ static NSMutableArray *_tasks;
     }
 }
 
-- (BGProcessingTaskRequest*) buildRequest  API_AVAILABLE(ios(13.0)){
-    /* DISABLED UNTIL I FIGURE THIS OUT:
-    if (@available (ios 17.0, *)) {
-        if (_type == TSTaskTypeHealthResearch) {
-            BGHealthResearchTaskRequest *request = [[BGHealthResearchTaskRequest alloc] initWithIdentifier:_identifier];
-            request.protectionTypeOfRequiredData = @"TODO protectionTypeOfRequiredData";
-            return request;
-        }
-    }
-    */
+- (BGProcessingTaskRequest*) buildRequest API_AVAILABLE(ios(13.0)) {
     return [[BGProcessingTaskRequest alloc] initWithIdentifier:_identifier];
-    
 }
 
 - (void) stop {
@@ -210,7 +200,7 @@ static NSMutableArray *_tasks;
     }
 }
 
--(void) setTask:(BGProcessingTask*)task {
+-(void) setTask:(BGTask*)task {
     scheduled = NO;
     
     _task = task;
@@ -248,7 +238,9 @@ static NSMutableArray *_tasks;
 
 - (BOOL) onTimeout {
     if (_callback) {
-        _callback(_identifier, YES);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self->_callback(self->_identifier, YES);
+        });
         return YES;
     } else {
         return NO;
@@ -256,10 +248,12 @@ static NSMutableArray *_tasks;
 }
 
 -(void) finish:(BOOL)success {
-    [_task setTaskCompletedWithSuccess:success];
+    if (_task) {
+        [_task setTaskCompletedWithSuccess:success];
+        _task = nil;
+    }
     _finished = YES;
     _executed = NO;
-    _task = nil;
     if (!_periodic) {
         [self destroy];
     }
@@ -312,7 +306,7 @@ static NSMutableArray *_tasks;
 }
 
 -(NSString*) description {
-    return [NSString stringWithFormat:@"<TSBGTask identifier=%@, delay=%ld, periodic=%d requiresNetworkConnectivity=%d requiresExternalPower=%d, enabled=%d>", _identifier, (long)_delay, _periodic, _requiresNetworkConnectivity, _requiresExternalPower, _enabled];
+    return [NSString stringWithFormat:@"<TSBGTask identifier=%@, delay=%.1f, periodic=%d requiresNetworkConnectivity=%d requiresExternalPower=%d, enabled=%d>", _identifier, _delay, _periodic, _requiresNetworkConnectivity, _requiresExternalPower, _enabled];
 }
 
 @end

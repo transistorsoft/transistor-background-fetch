@@ -9,13 +9,15 @@
 #import <UIKit/UIKit.h>
 #import <BackgroundTasks/BackgroundTasks.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 @interface TSBGAppRefreshSubscriber : NSObject
 
 +(void)load;
 +(NSMutableDictionary *)subscribers;
 +(void) add:(TSBGAppRefreshSubscriber*)tsTask;
 +(void) remove:(TSBGAppRefreshSubscriber*)tsTask;
-+(TSBGAppRefreshSubscriber*) get:(NSString*)identifier;
++(nullable TSBGAppRefreshSubscriber*) get:(NSString*)identifier;
 +(void) execute;
 +(BOOL) onTimeout;
 
@@ -23,13 +25,13 @@
 +(BOOL)useTaskScheduler;
 
 @property (nonatomic) NSString* identifier;
-@property (copy) void (^callback) (NSString*);
-@property (copy) void (^timeout) (NSString*);
+@property (nonatomic, copy, nullable) void (^callback) (NSString*);
+@property (nonatomic, copy, nullable) void (^timeout) (NSString*);
 @property (nonatomic, readonly) BOOL enabled;
 @property (nonatomic, readonly) BOOL executed;
 @property (nonatomic, readonly) BOOL finished;
 
--(instancetype) initWithIdentifier:(NSString*)identifier callback:(void (^)(NSString* taskId))callback timeout:(void (^)(NSString* taskId))timeout;
+-(instancetype) initWithIdentifier:(NSString*)identifier callback:(void (^)(NSString* taskId))callback timeout:(nullable void (^)(NSString* taskId))timeout;
 -(void) execute;
 -(void) onTimeout;
 -(void) finish;
@@ -37,3 +39,4 @@
 
 @end
 
+NS_ASSUME_NONNULL_END

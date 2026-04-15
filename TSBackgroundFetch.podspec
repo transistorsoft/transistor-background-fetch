@@ -9,12 +9,12 @@ Pod::Spec.new do |s|
   s.name                = 'TSBackgroundFetch'
   s.version             = '4.0.6'
   s.vendored_frameworks = 'TSBackgroundFetch.xcframework'
-  s.documentation_url   = 'https://github.com/transistorsoft/transistor-background-fetch/docs/ios'
+  s.documentation_url   = 'https://fetch.transistorsoft.com'
   s.frameworks          = 'UIKit'
   s.weak_frameworks     = 'BackgroundTasks'
   s.source              = { :http => 'https://github.com/transistorsoft/transistor-background-fetch/releases/download/4.0.6/TSBackgroundFetch.xcframework.zip' }
   s.homepage            = 'https://github.com/transistorsoft/transistor-background-fetch'
-  s.license             = { :type => 'MIT', :file => 'LICENSE' }
+  s.license             = { :type => 'MIT' }
   s.summary             = 'Background fetch & periodic background tasks for iOS.'
   s.description         = 'Lightweight, open-source Background Fetch that wraps BGTaskScheduler / background fetch to deliver reliable periodic callbacks.'
   s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }
