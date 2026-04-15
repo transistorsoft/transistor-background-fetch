@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## Unreleased
+* [iOS] Add iOS DemoApp scaffolding, workspace, and shared schemes
+* [Android] Upgrade build/publish pipeline, Sonatype Central Portal
+* [iOS] Upgrade build/publish pipeline, add versioning and SwiftInterface
+* [iOS] Bug in publish/build scripts
+* [iOS] Remove obsolete TSBackgroundFetch.framework.  harden publish script
+* [iOS] Hardending to publish script
+* [iOS] Remove PrivacyInfo from podspec.  not required.  it's already in teh .xcframework
+* [iOS] Implement Android sonatype publishing:  No more custom maven url for consumers
+* [iOS] Implementing publishing for iOS/Android with cocoapods, SPM, sontatype
+* [iOS] Update build commands with logging
+* [iOS] Update to Gradle 8
+* [iOS] codesign TSBackgroundFetch.xcframework
+* [iOS] add Task type and PrivacyInfo
+* [iOS] Only allow registration of BGProcessingTasks which are prefixed with com.transistorsoft
+* [iOS] JobService will keep a queue of the last 5 executed Jobs to analyze for duplicates
+* [iOS] Detect and dispose of duplicate events fired within 2000ms of each other
+* [Android] Android 14 (SDK 34) support
+* [iOS] Log JobScheduler jobId to facilitate simulating scheduleTask events with adb shell
+* [iOS] Refactor headless-detection to use LifecycleManager
+* [iOS] Android 12 compatibility
+* [iOS] Modify build output dirs for cordova, react
+* [Android] Allow reconfigure of fetch-task.  [Android] Ignore initial fetch-task scheduled immediately from JobScheduler.  Add new logic to isMainActivityActive based upon launchIntent
+* [iOS] Add capacitor build-script
+* [iOS] Modify build-script to Flattent .framework for MacCatalyst
+* [iOS] Migrate instance vars to property
+* [iOS] Set iOS min version 9.0
+* [iOS] Build success for Catalyst
+* [iOS] Update to reccommended settings
+* [iOS] Update build-script
+* [iOS] Implement task timeout warning callback
+* [iOS] reconfigure build scripts to build maven repo format.  local aar dependencies no longer allowed with gradle tool 4.0.0
+* [iOS] onBoot must take into account forceAlarmManager and auto-start those tasks
+* [iOS] Migrate project to AndroidX.  [Android] check wakeLock.isHeld() before wakeLock.release().
+
 ## 4.1.0 &mdash; 2026-04-15
 - Bug in publish/build scripts
 - Release 4.1.0
