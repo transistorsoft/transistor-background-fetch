@@ -24,7 +24,7 @@ set -euo pipefail
 #   --no-build              Skip building xcframework (use --xcframework-dir).
 #   --xcframework-dir PATH  Use an existing .xcframework directory.
 #   --push-cocoapods        Run `pod spec lint` + `pod trunk push` at the end.
-#   --no-cocoapods          Explicitly skip CocoaPods trunk push (default).
+#   --no-cocoapods          Skip CocoaPods trunk push.
 #   --retag                 Overwrite the existing remote tag if already present.
 #   --create-branch          Create and switch to a release branch before making edits (default name: releases/<VERSION>)
 #   --branch-name NAME       Override the branch name used with --create-branch
@@ -110,7 +110,7 @@ RELEASE_NOTES=""
 DRY_RUN=0
 NO_BUILD=0
 XCFRAMEWORK_DIR_OVERRIDE=""
-PUSH_COCOAPODS=0
+PUSH_COCOAPODS=1
 RETAG=0
 CREATE_BRANCH=0
 BRANCH_NAME=""
@@ -135,8 +135,8 @@ Options:
   --dry-run                 Build and package only (no Git, no tags, no GitHub release).
   --no-build                Skip building (requires --xcframework-dir)
   --xcframework-dir PATH    Use existing .xcframework directory
-  --push-cocoapods          Run pod lint + trunk push at the end
-  --no-cocoapods            Explicitly skip CocoaPods trunk push (default)
+  --push-cocoapods          Run pod lint + trunk push at the end (default)
+  --no-cocoapods            Skip CocoaPods trunk push
   --retag                   Overwrite existing remote tag if present
   --create-branch            Create and switch to a release branch (default: releases/<VERSION>)
   --branch-name NAME         Override branch name when using --create-branch
@@ -591,7 +591,7 @@ echo ""
 echo "  Version:        ${VERSION}"
 echo "  Public repo:    ${PUBLIC_REPO}"
 echo "  Catalyst:       $( [[ "$INCLUDE_CATALYST" == "1" ]] && echo ENABLED || echo DISABLED )"
-echo "  CocoaPods push: $( [[ "$PUSH_COCOAPODS" -eq 1 ]] && echo YES || echo "NO (use --push-cocoapods)" )"
+echo "  CocoaPods push: $( [[ "$PUSH_COCOAPODS" -eq 1 ]] && echo YES || echo "NO (--no-cocoapods)" )"
 echo "  Verify tag:     $( [[ "$SKIP_TAG_PUSH" -eq 1 ]] && echo "SKIP (tag exists)" || echo YES )"
 if [[ "$CREATE_BRANCH" -eq 1 ]]; then
   echo "  Branch:         ${BRANCH_NAME:-releases/${VERSION}}"
@@ -710,7 +710,7 @@ Pod::Spec.new do |s|
   s.summary             = 'Background fetch & periodic background tasks for iOS.'
   s.description         = 'Lightweight, open-source Background Fetch that wraps BGTaskScheduler / background fetch to deliver reliable periodic callbacks.'
   s.homepage            = 'https://github.com/transistorsoft/transistor-background-fetch'
-  s.documentation_url   = 'https://github.com/transistorsoft/transistor-background-fetch/docs/ios'
+  s.documentation_url   = 'https://fetch.transistorsoft.com'
   s.license             = { :type => 'MIT', :file => 'LICENSE' }
   s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }
   s.source              = { :http => '${ASSET_URL}' }
@@ -740,7 +740,7 @@ replacements = {
   /^\s*s\.version\s*=.*$/i            => "  s.version             = '#{version}'",
   /^\s*s\.source\s*=.*$/i             => "  s.source              = { :http => '#{url}' }",
   /^\s*s\.homepage\s*=.*$/i           => "  s.homepage            = 'https://github.com/transistorsoft/transistor-background-fetch'",
-  /^\s*s\.documentation_url\s*=.*$/i  => "  s.documentation_url   = 'https://github.com/transistorsoft/transistor-background-fetch/docs/ios'",
+  /^\s*s\.documentation_url\s*=.*$/i  => "  s.documentation_url   = 'https://fetch.transistorsoft.com'",
   /^\s*s\.license\s*=.*$/i            => "  s.license             = { :type => 'MIT', :file => 'LICENSE' }",
   /^\s*s\.frameworks\s*=.*$/i         => "  s.frameworks          = 'UIKit'",
   /^\s*s\.weak_frameworks\s*=.*$/i    => "  s.weak_frameworks     = 'BackgroundTasks'",
