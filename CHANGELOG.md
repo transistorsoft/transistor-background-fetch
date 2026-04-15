@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## 4.1.0 &mdash; 2026-04-15
 * [iOS] Add iOS DemoApp scaffolding, workspace, and shared schemes
 * [Android] Upgrade build/publish pipeline, Sonatype Central Portal
 * [iOS] Upgrade build/publish pipeline, add versioning and SwiftInterface
