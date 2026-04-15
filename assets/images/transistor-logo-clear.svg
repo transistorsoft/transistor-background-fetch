@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="-3 -3 128 128">
+  <defs><filter id="sdf" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur in="SourceAlpha" stdDeviation="6.0" result="blur"/><feColorMatrix in="blur" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 50 -25" result="mask"/><feFlood flood-color="#FEDD1E" result="color"/><feComposite in="color" in2="mask" operator="in"/></filter></defs>
+  <rect x="-1" y="-1" width="122" height="122" rx="20" ry="20" fill="none"/>
+  <polygon filter="url(#sdf)" fill="#FEDD1E" transform="translate(12.11,9.75)" points="64.393,99.121 64.393,80.978 45.592,80.978 45.592,98.5 30.217,98.5 30.217,80.978 30.217,73.29 30.217,57.939 1.389,57.939 1.389,42.565 30.217,42.565 30.217,27.214 30.217,19.527 30.217,19.527 30.217,2.003 45.592,2.003 45.592,19.527 64.393,19.527 64.393,1.383 79.767,1.383 79.767,27.214 79.767,34.902 72.079,34.902 45.592,34.902 45.592,65.603 72.079,65.603 79.767,65.603 79.767,73.29 79.767,99.121 64.393,99.121"/>
+</svg>
