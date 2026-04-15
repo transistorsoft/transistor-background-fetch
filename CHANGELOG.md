@@ -1,8 +1,7 @@
 # CHANGELOG
 
-## 4.1.0 &mdash; 2026-04-15
-- Release 4.0.6
-- Bug in publish/build scripts
+## 4.2.0 &mdash; 2026-04-15
+- Release 4.1.0
 
 ## 4.0.6 &mdash; 2026-04-15
 - Bug in publish/build scripts
