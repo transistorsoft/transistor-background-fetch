@@ -521,7 +521,8 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   ZIP_PATH="${DRY_TMPDIR}/${ZIP_NAME}"
 
   echo "▶ (dry-run) Packaging XCFramework → ${ZIP_PATH}"
-  ( cd "$(dirname "$XC_DIR")" && /usr/bin/zip -yr "$ZIP_PATH" "$(basename "$XC_DIR")" ) >/dev/null
+  cp "${REPO_ROOT}/LICENSE" "$(dirname "$XC_DIR")/LICENSE" 2>/dev/null || true
+  ( cd "$(dirname "$XC_DIR")" && /usr/bin/zip -yr "$ZIP_PATH" "$(basename "$XC_DIR")" LICENSE ) >/dev/null
 
   echo "▶ (dry-run) Computing SPM checksum"
   CHECKSUM="$(swift package compute-checksum "$ZIP_PATH")"
@@ -622,7 +623,8 @@ PUBLISH_TMPDIR="$(mktemp -d)"
 ZIP_PATH="${PUBLISH_TMPDIR}/${ZIP_NAME}"
 
 echo "▶ Packaging XCFramework → ${ZIP_PATH}"
-( cd "$(dirname "$XC_DIR")" && /usr/bin/zip -yr "$ZIP_PATH" "$(basename "$XC_DIR")" )
+cp "${REPO_ROOT}/LICENSE" "$(dirname "$XC_DIR")/LICENSE" 2>/dev/null || true
+( cd "$(dirname "$XC_DIR")" && /usr/bin/zip -yr "$ZIP_PATH" "$(basename "$XC_DIR")" LICENSE )
 
 echo "▶ Computing SPM checksum"
 CHECKSUM="$(swift package compute-checksum "$ZIP_PATH")"
