@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## 4.1.1 &mdash; 2026-04-15
 * [iOS] package LICENSE into published zip
 
 ## 4.1.0 &mdash; 2026-04-15
