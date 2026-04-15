@@ -256,11 +256,10 @@ public class BackgroundFetchConfig {
             editor.putStringSet("tasks", newIds);
             editor.apply();
         }
-        if (!config.isFetchTask) {
-            SharedPreferences.Editor editor = context.getSharedPreferences(BackgroundFetch.TAG + ":" + config.taskId, 0).edit();
-            editor.clear();
-            editor.apply();
-        }
+        // Clear per-task preferences for all task types (fetch and scheduled).
+        SharedPreferences.Editor editor = context.getSharedPreferences(BackgroundFetch.TAG + ":" + config.taskId, 0).edit();
+        editor.clear();
+        editor.apply();
     }
 
     static int FETCH_JOB_ID = 999;
