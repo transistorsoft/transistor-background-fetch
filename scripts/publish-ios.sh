@@ -187,7 +187,7 @@ gh auth status >/dev/null 2>&1 || die "GitHub CLI is not authenticated. Run: gh 
 latest_semver_tag() {
   git ls-remote --tags --refs "https://github.com/${PUBLIC_REPO}.git" 2>/dev/null \
     | awk -F/ '{print $NF}' | sed 's/\^{}//' \
-    | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' \
+    | grep -E '^ios/[0-9]+\.[0-9]+\.[0-9]+$' | sed 's|^ios/||' \
     | sort -V | tail -1
 }
 
@@ -316,7 +316,7 @@ generate_changelog() {
     if git -C "$REPO_ROOT" merge-base --is-ancestor "$tag" HEAD 2>/dev/null; then
       prev_tag="$tag"
     fi
-  done < <(git -C "$REPO_ROOT" tag -l | sort -V)
+  done < <(git -C "$REPO_ROOT" tag -l 'ios/*' | sed 's|^ios/||' | sort -V)
 
   if [[ -z "$prev_tag" ]]; then
     echo "⚠️  No reachable tag found on current branch — skipping changelog generation"
@@ -464,26 +464,27 @@ if [[ "$CREATE_BRANCH" -eq 1 ]]; then
   popd >/dev/null
 fi
 
+IOS_TAG="ios/${VERSION}"
 remote_tag_exists() {
-  git ls-remote --tags "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${VERSION}" | grep -q "refs/tags/${VERSION}"
+  git ls-remote --tags "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${IOS_TAG}" | grep -q "refs/tags/${IOS_TAG}"
 }
 if remote_tag_exists; then
   if [[ "$RETAG" -ne 1 ]]; then
-    remote_sha="$(git ls-remote --tags "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${VERSION}" | awk '{print $1}')"
+    remote_sha="$(git ls-remote --tags "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${IOS_TAG}" | awk '{print $1}')"
     local_sha=""
-    if git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null 2>&1; then
-      local_sha="$(git rev-parse -q "${VERSION}^{}" 2>/dev/null || true)"
+    if git rev-parse -q --verify "refs/tags/${IOS_TAG}" >/dev/null 2>&1; then
+      local_sha="$(git rev-parse -q "${IOS_TAG}^{}" 2>/dev/null || true)"
     fi
 
     if [[ -n "$local_sha" && "$local_sha" != "$remote_sha" ]]; then
-      echo "❌ Tag '${VERSION}' already exists on remote and points to a different commit."
+      echo "❌ Tag '${IOS_TAG}' already exists on remote and points to a different commit."
       echo "   remote: ${remote_sha}"
       echo "   local : ${local_sha}"
       echo "   Use --retag to overwrite the remote tag, or bump with --bump patch|minor|major."
       exit 1
     fi
 
-    echo "ℹ️  Tag '${VERSION}' already exists on remote and matches; will skip re-pushing this tag."
+    echo "ℹ️  Tag '${IOS_TAG}' already exists on remote and matches; will skip re-pushing this tag."
     SKIP_TAG_PUSH=1
   fi
 fi
@@ -528,7 +529,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   CHECKSUM="$(swift package compute-checksum "$ZIP_PATH")"
   echo "   checksum: $CHECKSUM"
 
-  ASSET_URL="https://github.com/${PUBLIC_REPO}/releases/download/${VERSION}/${ZIP_NAME}"
+  ASSET_URL="https://github.com/${PUBLIC_REPO}/releases/download/${IOS_TAG}/${ZIP_NAME}"
 
   # Preview release notes
   if [[ -z "$RELEASE_NOTES" ]]; then
@@ -547,7 +548,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 
   echo
   echo "– Would create/update GitHub Release:"
-  echo "    tag:        ${VERSION}"
+  echo "    tag:        ${IOS_TAG}"
   echo "    prerelease: $([[ "$VERSION" == *-* ]] && echo true || echo false)"
   echo "    asset:      ${ZIP_NAME}"
   echo "    url:        ${ASSET_URL}"
@@ -567,7 +568,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   else
     echo "– Would commit on ${BASE_BRANCH}"
   fi
-  echo "– Would tag: ${VERSION}"
+  echo "– Would tag: ${IOS_TAG}"
   echo "– Would push branch/tag to origin for ${PUBLIC_REPO}"
 
   if [[ "$PUSH_COCOAPODS" -eq 1 ]]; then
@@ -635,13 +636,13 @@ if [[ -z "${RELEASE_NOTES}" ]]; then
   RELEASE_NOTES="${BINARY_NAME} ${VERSION}"
 fi
 
-ASSET_URL="https://github.com/${PUBLIC_REPO}/releases/download/${VERSION}/${ZIP_NAME}"
+ASSET_URL="https://github.com/${PUBLIC_REPO}/releases/download/${IOS_TAG}/${ZIP_NAME}"
 
 # ---- Preflight asset guard ----
 SKIP_UPLOAD=0
-if gh release view "$VERSION" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+if gh release view "$IOS_TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
   # Does an asset with this exact name already exist?
-  existing_asset="$(gh release view "$VERSION" --repo "$PUBLIC_REPO" --json assets --jq '.assets[]? | select(.name=="'"$ZIP_NAME"'") | .name' 2>/dev/null || true)"
+  existing_asset="$(gh release view "$IOS_TAG" --repo "$PUBLIC_REPO" --json assets --jq '.assets[]? | select(.name=="'"$ZIP_NAME"'") | .name' 2>/dev/null || true)"
   if [[ -n "$existing_asset" ]]; then
     echo "ℹ️  Found existing asset '${ZIP_NAME}' on release ${VERSION}. Verifying it matches local build…"
     REMOTE_TMP="$(mktemp -d)"
@@ -780,37 +781,37 @@ if [[ "$CREATE_BRANCH" -eq 1 ]]; then
 fi
 
 if [[ "$SKIP_TAG_PUSH" -eq 1 ]]; then
-  echo "↷ Skipping tag creation/push; remote '${VERSION}' already exists and matches."
+  echo "↷ Skipping tag creation/push; remote '${IOS_TAG}' already exists and matches."
 else
   if [[ "$RETAG" -eq 1 ]]; then
-    echo "↺ Retagging ${VERSION} (deleting remote tag if present)…"
-    git tag -f "${VERSION}"
-    git push --delete origin "${VERSION}" >/dev/null 2>&1 || true
-    git push origin "${VERSION}"
+    echo "↺ Retagging ${IOS_TAG} (deleting remote tag if present)…"
+    git tag -f "${IOS_TAG}"
+    git push --delete origin "${IOS_TAG}" >/dev/null 2>&1 || true
+    git push origin "${IOS_TAG}"
   else
-    if ! git rev-parse -q --verify "refs/tags/${VERSION}" >/dev/null; then
-      git tag "${VERSION}"
+    if ! git rev-parse -q --verify "refs/tags/${IOS_TAG}" >/dev/null; then
+      git tag "${IOS_TAG}"
     fi
-    git push origin "${VERSION}" || true
+    git push origin "${IOS_TAG}" || true
   fi
 fi
 popd >/dev/null
 
 # Create/Update GitHub Release + upload asset (after tag/branch push)
 echo "▶ Create/Update GitHub Release + upload asset (post-tag)"
-if ! gh release view "$VERSION" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
-  gh release create "$VERSION" \
+if ! gh release view "$IOS_TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
+  gh release create "$IOS_TAG" \
     --repo "$PUBLIC_REPO" \
     --title "$VERSION" \
     --notes "$RELEASE_NOTES" \
     --verify-tag
 else
-  gh release edit "$VERSION" --repo "$PUBLIC_REPO" --verify-tag >/dev/null 2>&1 || true
+  gh release edit "$IOS_TAG" --repo "$PUBLIC_REPO" --verify-tag >/dev/null 2>&1 || true
 fi
 
 # Upload asset (unless identical asset already present)
 if [[ "$SKIP_UPLOAD" -ne 1 ]]; then
-  gh release upload "$VERSION" "$ZIP_PATH" --repo "$PUBLIC_REPO" --clobber
+  gh release upload "$IOS_TAG" "$ZIP_PATH" --repo "$PUBLIC_REPO" --clobber
 else
   echo "↷ Skipping asset upload; remote asset already matches."
 fi
@@ -844,12 +845,12 @@ if [[ "$UPLOADED_CHECKSUM" != "$CHECKSUM" ]]; then
   echo "   expected: $CHECKSUM"
   echo "   actual  : $UPLOADED_CHECKSUM"
   echo "   Leaving the GitHub Release in DRAFT state. Investigate and retry."
-  gh release edit "$VERSION" --repo "$PUBLIC_REPO" --draft=true >/dev/null 2>&1 || true
+  gh release edit "$IOS_TAG" --repo "$PUBLIC_REPO" --draft=true >/dev/null 2>&1 || true
   exit 1
 fi
 
 # All good: undraft the release
-gh release edit "$VERSION" --repo "$PUBLIC_REPO" --draft=false >/dev/null 2>&1 || true
+gh release edit "$IOS_TAG" --repo "$PUBLIC_REPO" --draft=false >/dev/null 2>&1 || true
 
 # Optionally create PR and auto-merge
 if [[ "$CREATE_PR" -eq 1 || -n "$AUTO_MERGE" ]]; then

@@ -206,7 +206,7 @@ generate_changelog_entries() {
     if git -C "$REPO_ROOT" merge-base --is-ancestor "$tag" HEAD 2>/dev/null; then
       prev_tag="$tag"
     fi
-  done < <(git -C "$REPO_ROOT" tag -l | grep -E '^[0-9]+\.[0-9]+' | sort -V)
+  done < <(git -C "$REPO_ROOT" tag -l 'android/*' | sed 's|^android/||' | sort -V)
 
   if [[ -z "$prev_tag" ]]; then
     echo "⚠️  No reachable tag found — skipping entry generation"
@@ -346,11 +346,12 @@ fi
 # ---- 6. Tag ----
 echo ""
 echo "── Step 6: Tag ──────────────────────────────────────────────"
+TAG="android/${VERSION}"
 if $DRY_RUN; then
-  echo "  Would tag: ${VERSION}"
+  echo "  Would tag: ${TAG}"
 else
-  git -C "$REPO_ROOT" tag -a "$VERSION" -m "Release ${VERSION}"
-  echo "▶ Tagged: ${VERSION}"
+  git -C "$REPO_ROOT" tag -a "$TAG" -m "Release ${VERSION} (Android)"
+  echo "▶ Tagged: ${TAG}"
 fi
 
 echo ""
@@ -362,4 +363,4 @@ echo "  Artifacts will appear at:"
 echo "    https://repo1.maven.org/maven2/com/transistorsoft/tsbackgroundfetch/${VERSION}/"
 echo ""
 echo "  Don't forget to push:"
-echo "    git push && git push --tags"
+echo "    git push && git push origin ${TAG}"
