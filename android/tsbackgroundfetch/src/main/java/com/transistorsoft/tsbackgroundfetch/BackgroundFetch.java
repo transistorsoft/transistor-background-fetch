@@ -33,7 +33,7 @@ public class BackgroundFetch {
 
     public static final int STATUS_AVAILABLE = 2;
 
-    private static BackgroundFetch mInstance = null;
+    private static volatile BackgroundFetch mInstance = null;
 
     private static ExecutorService sThreadPool;
 
@@ -90,6 +90,7 @@ public class BackgroundFetch {
                 BackgroundFetchConfig existing = mConfig.get(config.getTaskId());
                 Log.d(TAG, "Re-configured existing task");
                 BGTask.reschedule(mContext, existing, config);
+                config.save(mContext);
                 mConfig.put(config.getTaskId(), config);
                 return;
             } else {
@@ -144,28 +145,31 @@ public class BackgroundFetch {
         Log.d(TAG, msg);
 
         if (taskId == null) {
+            mFetchCallback = null;
             synchronized (mConfig) {
                 for (BackgroundFetchConfig config : mConfig.values()) {
                     BGTask task = BGTask.getTask(config.getTaskId());
                     if (task != null) {
                         task.finish();
-                        BGTask.removeTask(config.getTaskId());
                     }
                     BGTask.cancel(mContext, config.getTaskId(), config.getJobId());
                     config.destroy(mContext);
                 }
                 BGTask.clear();
+                mConfig.clear();
             }
         } else {
             BGTask task = BGTask.getTask(taskId);
             if (task != null) {
                 task.finish();
-                BGTask.removeTask(task.getTaskId());
             }
             BackgroundFetchConfig config = getConfig(taskId);
             if (config != null) {
-                config.destroy(mContext);
                 BGTask.cancel(mContext, config.getTaskId(), config.getJobId());
+                config.destroy(mContext);
+                synchronized (mConfig) {
+                    mConfig.remove(taskId);
+                }
             }
         }
     }
@@ -174,13 +178,17 @@ public class BackgroundFetch {
     public void scheduleTask(BackgroundFetchConfig config) {
         synchronized (mConfig) {
             if (mConfig.containsKey(config.getTaskId())) {
-                // This BackgroundFetchConfig already exists?  Should we halt any existing Job/Alarm here?
+                BackgroundFetchConfig existing = mConfig.get(config.getTaskId());
+                BGTask existingTask = BGTask.getTask(config.getTaskId());
+                if (existingTask != null) {
+                    existingTask.finish();
+                }
+                BGTask.cancel(mContext, existing.getTaskId(), existing.getJobId());
             }
             config.save(mContext);
             mConfig.put(config.getTaskId(), config);
         }
-        String taskId = config.getTaskId();
-        registerTask(taskId);
+        registerTask(config.getTaskId());
     }
 
     @SuppressWarnings({"WeakerAccess"})
@@ -202,6 +210,8 @@ public class BackgroundFetch {
         }
     }
 
+    // Android has no single API equivalent to iOS UIBackgroundRefreshStatus.
+    // JobScheduler/AlarmManager availability is implicit — always return available.
     public int status() {
         return STATUS_AVAILABLE;
     }

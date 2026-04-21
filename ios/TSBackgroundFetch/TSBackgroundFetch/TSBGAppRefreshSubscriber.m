@@ -78,10 +78,13 @@ static BOOL _hasRegisteredTaskScheduler   = NO;
 }
 
 +(BOOL) onTimeout {
-    BOOL foundTimeoutHandler = NO;
+    // Returns YES if any subscribers exist — callers use this to decide whether
+    // to auto-complete the BGTask or let subscribers handle finish: themselves.
+    // Subscribers without a timeout block auto-finish immediately.
+    BOOL hasSubscribers = NO;
     NSArray *subscribers = [[self subscribers] allValues];
     for (TSBGAppRefreshSubscriber *subscriber in subscribers) {
-        foundTimeoutHandler = YES;
+        hasSubscribers = YES;
         if (subscriber.timeout) {
             dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
                 [subscriber onTimeout];
@@ -90,7 +93,7 @@ static BOOL _hasRegisteredTaskScheduler   = NO;
             [[TSBackgroundFetch sharedInstance] finish:subscriber.identifier];
         }
     }
-    return foundTimeoutHandler;
+    return hasSubscribers;
 }
 
 
@@ -102,6 +105,9 @@ static BOOL _hasRegisteredTaskScheduler   = NO;
     return self;
 }
 
+/// Restoration path — called during +load when rehydrating from NSUserDefaults.
+/// Does NOT register in _subscribers (that is done by the +load loop) and does NOT
+/// persist (the identifier is already stored).
 -(instancetype) initWithIdentifier:(NSString*)identifier {
     self = [self init];
     if (self) {
@@ -110,6 +116,8 @@ static BOOL _hasRegisteredTaskScheduler   = NO;
     return self;
 }
 
+/// Registration path — called when a plugin registers a new listener at runtime.
+/// Persists the identifier to NSUserDefaults and registers in _subscribers via +add:.
 -(instancetype) initWithIdentifier:(NSString*)identifier callback:(void (^)(NSString* taskId))callback timeout:(void (^)(NSString* taskId))timeout {
     self = [self init];
     if (self) {
@@ -117,10 +125,7 @@ static BOOL _hasRegisteredTaskScheduler   = NO;
         _callback = callback;
         _timeout = timeout;
         [self save];
-        @synchronized (_subscribers) {
-            [_subscribers setObject:self forKey:identifier];
-        }
-        
+        [TSBGAppRefreshSubscriber add:self];
     }
     return self;
 }

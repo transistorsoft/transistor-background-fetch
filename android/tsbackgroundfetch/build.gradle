@@ -116,13 +116,16 @@ if (versionPropsFile.exists()) {
     }
 }
 
-// Allow -P overrides to take precedence
-if (project.hasProperty('TS_BACKGROUND_FETCH_VERSION_NAME')) {
-    ext.TS_BACKGROUND_FETCH_VERSION_NAME = project.property('TS_BACKGROUND_FETCH_VERSION_NAME').toString()
+// Allow command-line overrides to take precedence (e.g. -PTS_BACKGROUND_FETCH_VERSION_NAME=4.0.7-SNAPSHOT)
+// Note: ext properties shadow -P properties, so we must check gradle.startParameter to detect
+// true command-line overrides (project.hasProperty returns true for ext props too).
+def cliProps = gradle.startParameter.projectProperties
+if (cliProps.containsKey('TS_BACKGROUND_FETCH_VERSION_NAME')) {
+    ext.TS_BACKGROUND_FETCH_VERSION_NAME = cliProps['TS_BACKGROUND_FETCH_VERSION_NAME'].toString()
     logger.lifecycle("[tsbackgroundfetch] Overriding VERSION_NAME via -P: ${ext.TS_BACKGROUND_FETCH_VERSION_NAME}")
 }
-if (project.hasProperty('TS_BACKGROUND_FETCH_VERSION_CODE')) {
-    ext.TS_BACKGROUND_FETCH_VERSION_CODE = project.property('TS_BACKGROUND_FETCH_VERSION_CODE').toString()
+if (cliProps.containsKey('TS_BACKGROUND_FETCH_VERSION_CODE')) {
+    ext.TS_BACKGROUND_FETCH_VERSION_CODE = cliProps['TS_BACKGROUND_FETCH_VERSION_CODE'].toString()
     logger.lifecycle("[tsbackgroundfetch] Overriding VERSION_CODE via -P: ${ext.TS_BACKGROUND_FETCH_VERSION_CODE}")
 }
 
@@ -190,7 +193,7 @@ android {
     namespace "com.transistorsoft.tsbackgroundfetch"
     compileSdkVersion rootProject.compileSdkVersion
     defaultConfig {
-        minSdkVersion 16
+        minSdkVersion 19
         targetSdkVersion rootProject.targetSdkVersion
         consumerProguardFiles 'consumer-rules.pro'
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -198,8 +201,11 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+    }
+    testOptions {
+        unitTests.includeAndroidResources = true
     }
 
     // Enable variant-aware publishing so `components.release` exists
@@ -213,6 +219,8 @@ android {
 
 dependencies {
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
     androidTestImplementation 'androidx.test:runner:1.6.2'
 
     implementation fileTree(dir: 'libs', include: ['*.jar'])
@@ -372,5 +380,83 @@ signing {
         }
     } else {
         logger.warn("[tsbackgroundfetch] ⚠️  No signing key configured; Sonatype publish will fail without signatures")
+    }
+}
+
+////
+// Version file helpers for :tsbackgroundfetch
+// Uses: versioning/tsbackgroundfetch.properties (VERSION_NAME / VERSION_CODE)
+//
+tasks.register("initVersionProps") {
+    doLast {
+        def dir = rootProject.file("versioning")
+        if (!dir.exists()) { dir.mkdirs() }
+        def f = rootProject.file("versioning/${ARTIFACT_ID}.properties")
+        if (!f.exists()) {
+            def p = new Properties()
+            p['VERSION_NAME'] = (ext.has('TS_BACKGROUND_FETCH_VERSION_NAME') ? ext.TS_BACKGROUND_FETCH_VERSION_NAME : "0.0.1").toString()
+            p['VERSION_CODE'] = (ext.has('TS_BACKGROUND_FETCH_VERSION_CODE') ? ext.TS_BACKGROUND_FETCH_VERSION_CODE : "1").toString()
+            f.withOutputStream { os -> p.store(os, null) }
+            println "[tsbackgroundfetch] Created versioning/${ARTIFACT_ID}.properties with VERSION_NAME=${p['VERSION_NAME']} VERSION_CODE=${p['VERSION_CODE']}"
+        } else {
+            println "[tsbackgroundfetch] versioning/${ARTIFACT_ID}.properties already exists"
+        }
+    }
+}
+
+def writeTsBfVersionProps = { String name, String code ->
+    def f = rootProject.file("versioning/${ARTIFACT_ID}.properties")
+    def p = new Properties()
+    if (f.exists()) { p.load(new FileInputStream(f)) }
+    p['VERSION_NAME'] = name
+    p['VERSION_CODE'] = code
+    f.withOutputStream { os -> p.store(os, null) }
+    ext.TS_BACKGROUND_FETCH_VERSION_NAME = name
+    ext.TS_BACKGROUND_FETCH_VERSION_CODE = code
+    println "[tsbackgroundfetch] Bumped to VERSION_NAME=${name} VERSION_CODE=${code}"
+}
+
+tasks.register("bumpVersionPatch") {
+    dependsOn("initVersionProps")
+    doLast {
+        def f = rootProject.file("versioning/${ARTIFACT_ID}.properties")
+        def p = new Properties(); p.load(new FileInputStream(f))
+        def parts = p['VERSION_NAME'].toString().split('\\.').collect { it as int }
+        while (parts.size() < 3) parts << 0
+        parts[2] = parts[2] + 1
+        def newName = "${parts[0]}.${parts[1]}.${parts[2]}"
+        def newCode = (p['VERSION_CODE'].toString().toInteger() + 1).toString()
+        writeTsBfVersionProps(newName, newCode)
+    }
+}
+
+tasks.register("bumpVersionMinor") {
+    dependsOn("initVersionProps")
+    doLast {
+        def f = rootProject.file("versioning/${ARTIFACT_ID}.properties")
+        def p = new Properties(); p.load(new FileInputStream(f))
+        def parts = p['VERSION_NAME'].toString().split('\\.').collect { it as int }
+        while (parts.size() < 3) parts << 0
+        parts[1] = parts[1] + 1
+        parts[2] = 0
+        def newName = "${parts[0]}.${parts[1]}.${parts[2]}"
+        def newCode = (p['VERSION_CODE'].toString().toInteger() + 1).toString()
+        writeTsBfVersionProps(newName, newCode)
+    }
+}
+
+tasks.register("bumpVersionMajor") {
+    dependsOn("initVersionProps")
+    doLast {
+        def f = rootProject.file("versioning/${ARTIFACT_ID}.properties")
+        def p = new Properties(); p.load(new FileInputStream(f))
+        def parts = p['VERSION_NAME'].toString().split('\\.').collect { it as int }
+        while (parts.size() < 3) parts << 0
+        parts[0] = parts[0] + 1
+        parts[1] = 0
+        parts[2] = 0
+        def newName = "${parts[0]}.${parts[1]}.${parts[2]}"
+        def newCode = (p['VERSION_CODE'].toString().toInteger() + 1).toString()
+        writeTsBfVersionProps(newName, newCode)
     }
 }

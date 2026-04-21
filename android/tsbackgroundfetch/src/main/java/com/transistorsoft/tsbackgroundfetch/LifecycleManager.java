@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Component for managing app life-cycle changes, including headless-mode.
  */
 public class LifecycleManager implements DefaultLifecycleObserver, Runnable {
-    private static LifecycleManager sInstance;
+    private static volatile LifecycleManager sInstance;
 
     public static LifecycleManager getInstance() {
         if (sInstance == null) {
@@ -51,8 +51,9 @@ public class LifecycleManager implements DefaultLifecycleObserver, Runnable {
     }
 
     /**
-     * Temporarily disable responding to pause/resume events.  This was placed here for handling TSLocationManagerActivity events
-     * whose presentation causes onPause / onResume events that we don't want to react to.
+     * Temporarily disable responding to pause/resume events.  Used when presenting
+     * system activities (eg permission dialogs) whose onPause / onResume events
+     * should not change headless/background state.
      */
     public void pause() {
         mPaused.set(true);
