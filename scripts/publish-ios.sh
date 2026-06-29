@@ -147,7 +147,7 @@ Options:
 
 Notes:
   If --version/--bump are omitted, the script will try to read the latest version
-  heading from CHANGELOG.md (e.g., "## 4.0.2") and prompt:
+  heading from CHANGELOG-iOS.md (e.g., "## 4.0.2") and prompt:
     > Publish version X.Y.Z? [y/N]
 USAGE
   exit 1
@@ -237,9 +237,9 @@ EOF
   fi
 }
 
-# Read top version from CHANGELOG.md
+# Read top version from CHANGELOG-iOS.md
 version_from_changelog() {
-  local changelog="${REPO_ROOT}/CHANGELOG.md"
+  local changelog="${REPO_ROOT}/CHANGELOG-iOS.md"
   if [[ -f "$changelog" ]]; then
     local v
     v="$(grep -E '^\s*##\s*v?[0-9]+\.[0-9]+\.[0-9]+' "$changelog" | head -1 | sed -E 's/^\s*##\s*v?([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')"
@@ -247,10 +247,10 @@ version_from_changelog() {
   fi
 }
 
-# Extract release notes for a specific version heading from CHANGELOG.md
+# Extract release notes for a specific version heading from CHANGELOG-iOS.md
 changelog_notes_for_version() {
   local v="$1"
-  local f="${REPO_ROOT}/CHANGELOG.md"
+  local f="${REPO_ROOT}/CHANGELOG-iOS.md"
   [[ -f "$f" ]] || return 0
   awk -v ver="$v" '
     BEGIN{found=0}
@@ -285,7 +285,7 @@ resolve_version() {
     return
   fi
 
-  # Try CHANGELOG.md as an interactive suggestion
+  # Try CHANGELOG-iOS.md as an interactive suggestion
   local from_changelog; from_changelog="$(version_from_changelog || true)"
   if [[ -n "$from_changelog" ]]; then
     VERSION_SOURCE="changelog"
@@ -305,9 +305,9 @@ resolve_version() {
   echo "dev"
 }
 
-# ---- Generate CHANGELOG.md from git log since last tag ----
+# ---- Generate CHANGELOG-iOS.md from git log since last tag ----
 generate_changelog() {
-  local changelog="${REPO_ROOT}/CHANGELOG.md"
+  local changelog="${REPO_ROOT}/CHANGELOG-iOS.md"
 
   # Find the most recent local tag that is an ancestor of HEAD
   local prev_tag=""
@@ -328,7 +328,7 @@ generate_changelog() {
     local entry_count
     entry_count="$(awk '/^## Unreleased/{found=1;next} /^##/{exit} found && /^\* /{c++} END{print c+0}' "$changelog")"
     if [[ "$entry_count" -gt 0 ]]; then
-      echo "ℹ️  CHANGELOG.md already has ${entry_count} entries under '## Unreleased' — skipping generation"
+      echo "ℹ️  CHANGELOG-iOS.md already has ${entry_count} entries under '## Unreleased' — skipping generation"
       return
     fi
   fi
@@ -343,12 +343,12 @@ generate_changelog() {
     > "$commits_file"
 
   if [[ ! -s "$commits_file" ]]; then
-    echo "ℹ️  No new commits since ${prev_tag} — nothing to add to CHANGELOG.md"
+    echo "ℹ️  No new commits since ${prev_tag} — nothing to add to CHANGELOG-iOS.md"
     rm -f "$commits_file"
     return
   fi
 
-  echo "▶ Generating CHANGELOG.md entries from commits since ${prev_tag}:"
+  echo "▶ Generating CHANGELOG-iOS.md entries from commits since ${prev_tag}:"
   sed 's/^/    /' "$commits_file"
 
   # Build new changelog with commits inserted under ## Unreleased
@@ -382,12 +382,12 @@ generate_changelog() {
 
   # Open in editor for curation
   local editor="${EDITOR:-vim}"
-  echo "▶ Opening CHANGELOG.md in ${editor} for review..."
+  echo "▶ Opening CHANGELOG-iOS.md in ${editor} for review..."
   "$editor" "$changelog"
 
   # Stage the updated changelog
-  git -C "$REPO_ROOT" add CHANGELOG.md
-  if ! git -C "$REPO_ROOT" diff --cached --quiet -- CHANGELOG.md; then
+  git -C "$REPO_ROOT" add CHANGELOG-iOS.md
+  if ! git -C "$REPO_ROOT" diff --cached --quiet -- CHANGELOG-iOS.md; then
     git -C "$REPO_ROOT" commit -m "Update CHANGELOG for ${VERSION}"
   fi
 }
@@ -403,7 +403,7 @@ fi
 
 # If version was inferred from CHANGELOG, prompt for confirmation
 if [[ "$VERSION_SOURCE" == "changelog" && "$AUTO_CONFIRM" -eq 0 ]]; then
-  echo "⚙️  Detected version ${VERSION} from CHANGELOG.md"
+  echo "⚙️  Detected version ${VERSION} from CHANGELOG-iOS.md"
   read -r -p "> Publish version ${VERSION}? [y/N] " _ans
   case "${_ans:-}" in
     y|Y|yes|YES)
@@ -489,12 +489,12 @@ if remote_tag_exists; then
   fi
 fi
 
-# Resolve release notes from CHANGELOG.md if not provided
+# Resolve release notes from CHANGELOG-iOS.md if not provided
 if [[ -z "$RELEASE_NOTES" ]]; then
   notes="$(changelog_notes_for_version "$VERSION" | sed '/^$/d')"
   if [[ -n "$notes" ]]; then
     RELEASE_NOTES="$notes"
-    echo "ℹ️  Notes (from CHANGELOG.md):"
+    echo "ℹ️  Notes (from CHANGELOG-iOS.md):"
     echo "$RELEASE_NOTES" | sed 's/^/    /'
   fi
 fi
@@ -542,8 +542,8 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "    MARKETING_VERSION=${VERSION}"
   echo "    CURRENT_PROJECT_VERSION=$(semver_to_project_version "$VERSION")"
 
-  if grep -q '^## Unreleased' "${REPO_ROOT}/CHANGELOG.md" 2>/dev/null; then
-    echo "– Would rename '## Unreleased' → '## ${VERSION} &mdash; $(date +%Y-%m-%d)' in CHANGELOG.md"
+  if grep -q '^## Unreleased' "${REPO_ROOT}/CHANGELOG-iOS.md" 2>/dev/null; then
+    echo "– Would rename '## Unreleased' → '## ${VERSION} &mdash; $(date +%Y-%m-%d)' in CHANGELOG-iOS.md"
   fi
 
   echo
@@ -667,14 +667,14 @@ if gh release view "$IOS_TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
   fi
 fi
 
-# ---- Rename Unreleased heading in CHANGELOG.md ----
-CHANGELOG_PATH="${REPO_ROOT}/CHANGELOG.md"
+# ---- Rename Unreleased heading in CHANGELOG-iOS.md ----
+CHANGELOG_PATH="${REPO_ROOT}/CHANGELOG-iOS.md"
 TODAY="$(date +%Y-%m-%d)"
 if [[ -f "$CHANGELOG_PATH" ]] && grep -q '^## Unreleased' "$CHANGELOG_PATH"; then
-  echo "▶ Renaming '## Unreleased' → '## ${VERSION} &mdash; ${TODAY}' in CHANGELOG.md"
+  echo "▶ Renaming '## Unreleased' → '## ${VERSION} &mdash; ${TODAY}' in CHANGELOG-iOS.md"
   sed -i '' "s/^## Unreleased/## ${VERSION} \&mdash; ${TODAY}/" "$CHANGELOG_PATH"
-  git -C "$REPO_ROOT" add CHANGELOG.md
-  if ! git -C "$REPO_ROOT" diff --cached --quiet -- CHANGELOG.md; then
+  git -C "$REPO_ROOT" add CHANGELOG-iOS.md
+  if ! git -C "$REPO_ROOT" diff --cached --quiet -- CHANGELOG-iOS.md; then
     git -C "$REPO_ROOT" commit -m "Bump changelog: ${VERSION}"
   fi
 fi

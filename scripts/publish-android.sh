@@ -21,7 +21,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 GRADLE_DIR="${REPO_ROOT}/android"
-CHANGELOG="${REPO_ROOT}/CHANGELOG.md"
+CHANGELOG="${REPO_ROOT}/CHANGELOG-Android.md"
 VERSION_FILE="${GRADLE_DIR}/versioning/tsbackgroundfetch.properties"
 TODAY="$(date +%Y-%m-%d)"
 
@@ -215,7 +215,7 @@ generate_changelog_entries() {
 
   # If this version is already stamped in the changelog, nothing to do
   if [[ -f "$CHANGELOG" ]] && grep -q "^## ${VERSION}" "$CHANGELOG" 2>/dev/null; then
-    echo "ℹ️  CHANGELOG.md already has a '## ${VERSION}' heading — skipping generation"
+    echo "ℹ️  CHANGELOG-Android.md already has a '## ${VERSION}' heading — skipping generation"
     return
   fi
 
@@ -224,7 +224,7 @@ generate_changelog_entries() {
     local entry_count
     entry_count="$(awk '/^## Unreleased/{found=1;next} /^##/{exit} found && /^- /{c++} END{print c+0}' "$CHANGELOG")"
     if [[ "$entry_count" -gt 0 ]]; then
-      echo "ℹ️  CHANGELOG.md already has ${entry_count} entries under '## Unreleased' — skipping generation"
+      echo "ℹ️  CHANGELOG-Android.md already has ${entry_count} entries under '## Unreleased' — skipping generation"
       return
     fi
   fi
@@ -276,7 +276,7 @@ generate_changelog_entries() {
 
   # Open in editor for curation
   local editor="${EDITOR:-vim}"
-  echo "▶ Opening CHANGELOG.md in ${editor} for review..."
+  echo "▶ Opening CHANGELOG-Android.md in ${editor} for review..."
   if ! $DRY_RUN; then
     "$editor" "$CHANGELOG"
   fi
@@ -284,7 +284,7 @@ generate_changelog_entries() {
 
 stamp_changelog() {
   if [[ ! -f "$CHANGELOG" ]]; then
-    die "CHANGELOG.md not found at ${CHANGELOG}"
+    die "CHANGELOG-Android.md not found at ${CHANGELOG}"
   fi
 
   if grep -q "^## ${VERSION}" "$CHANGELOG" 2>/dev/null; then
@@ -307,7 +307,7 @@ stamp_changelog() {
   sed -i '' "s/^## Unreleased/${stamped}/" "$CHANGELOG"
   echo "▶ Stamped: ${stamped}"
 
-  git -C "$REPO_ROOT" add CHANGELOG.md
+  git -C "$REPO_ROOT" add CHANGELOG-Android.md
   git -C "$REPO_ROOT" add android/versioning/tsbackgroundfetch.properties
   if ! git -C "$REPO_ROOT" diff --cached --quiet; then
     git -C "$REPO_ROOT" commit -m "Release ${VERSION}"
