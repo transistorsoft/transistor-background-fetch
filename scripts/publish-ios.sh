@@ -691,13 +691,22 @@ if [[ ! -f "${PACKAGE_SWIFT}" ]]; then
 import PackageDescription
 let package = Package(
     name: "${BINARY_NAME}",
-    platforms: [.iOS(.v12)],
-    products: [.library(name: "${BINARY_NAME}", targets: ["${BINARY_NAME}"])],
+    // iOS 13 required by the Swift overlay (async/await + BGTaskScheduler).
+    platforms: [.iOS(.v13)],
+    products: [
+        .library(name: "${BINARY_NAME}", targets: ["${BINARY_NAME}"]),
+        .library(name: "BackgroundFetch", targets: ["BackgroundFetch"])
+    ],
     targets: [
         .binaryTarget(
             name: "${BINARY_NAME}",
             url: "${ASSET_URL}",
             checksum: "${CHECKSUM}"
+        ),
+        .target(
+            name: "BackgroundFetch",
+            dependencies: ["${BINARY_NAME}"],
+            path: "ios/TSBackgroundFetch/SwiftInterface"
         )
     ]
 )
