@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      No <uses-permission>, <service> or <receiver> entries are needed here:
+      the tsbackgroundfetch AAR merges its own FetchJobService, BootReceiver,
+      FetchAlarmReceiver and the RECEIVE_BOOT_COMPLETED / WAKE_LOCK /
+      SCHEDULE_EXACT_ALARM permissions into this manifest at build time.
+    -->
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.BackgroundFetchExample">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

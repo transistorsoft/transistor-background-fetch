@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Every BGTaskScheduler identifier the app registers must be listed here.
+	  - com.transistorsoft.fetch   : the periodic background-fetch (app-refresh) task
+	  - com.transistorsoft.customtask : the BGProcessingTask scheduled via scheduleTask()
+	  Custom task identifiers must be prefixed with "com.transistorsoft.".
+	-->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.transistorsoft.fetch</string>
+		<string>com.transistorsoft.customtask</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
+</dict>
+</plist>
