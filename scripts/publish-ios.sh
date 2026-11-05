@@ -692,7 +692,7 @@ import PackageDescription
 let package = Package(
     name: "${BINARY_NAME}",
     // iOS 13 required by the Swift overlay (async/await + BGTaskScheduler).
-    platforms: [.iOS(.v13)],
+    platforms: [.iOS(.v15)],
     products: [
         .library(name: "${BINARY_NAME}", targets: ["${BINARY_NAME}"]),
         .library(name: "BackgroundFetch", targets: ["BackgroundFetch"])
@@ -726,7 +726,7 @@ Pod::Spec.new do |s|
   s.license             = { :type => 'MIT', :file => 'LICENSE' }
   s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }
   s.source              = { :http => '${ASSET_URL}' }
-  s.ios.deployment_target = '12.0'
+  s.ios.deployment_target = '15.0'
   s.vendored_frameworks = '${BINARY_NAME}.xcframework'
   s.static_framework    = true
   s.frameworks          = 'UIKit'
@@ -760,7 +760,7 @@ replacements = {
   /^\s*s\.summary\s*=.*$/i            => "  s.summary             = 'Background fetch & periodic background tasks for iOS.'",
   /^\s*s\.description\s*=.*$/i        => "  s.description         = 'Lightweight, open-source Background Fetch that wraps BGTaskScheduler / background fetch to deliver reliable periodic callbacks.'",
   /^\s*s\.author\s*=.*$/i             => "  s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }",
-  /^\s*s\.ios\.deployment_target\s*=.*$/i => "  s.ios.deployment_target = '12.0'",
+  /^\s*s\.ios\.deployment_target\s*=.*$/i => "  s.ios.deployment_target = '15.0'",
   /^\s*s\.static_framework\s*=.*$/i   => "  s.static_framework    = true",
   /^\s*s\.pod_target_xcconfig\s*=.*$/i => "  s.pod_target_xcconfig = { 'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'YES' }",
 }

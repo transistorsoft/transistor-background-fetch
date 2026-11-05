@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## Unreleased
+* [iOS] The minimum iOS is 15.0 (was 12.0; Package.swift said 13). Xcode 27 refuses any deployment target
+  below 15.0 as an error, where Xcode 26 warned, so the framework, the podspec and Package.swift now say
+  15.0. iOS 15 runs on every device iOS 12 did except the iPhone 5s, 6 and 6 Plus.
+
 ## 4.1.1 &mdash; 2026-04-15
 * package LICENSE into published zip
 

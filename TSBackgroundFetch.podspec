@@ -18,7 +18,7 @@ Pod::Spec.new do |s|
   s.summary             = 'Background fetch & periodic background tasks for iOS.'
   s.description         = 'Lightweight, open-source Background Fetch that wraps BGTaskScheduler / background fetch to deliver reliable periodic callbacks.'
   s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }
-  s.ios.deployment_target = '12.0'
+  s.ios.deployment_target = '15.0'
   s.static_framework    = true
   s.pod_target_xcconfig = { 'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'YES' }
 end
