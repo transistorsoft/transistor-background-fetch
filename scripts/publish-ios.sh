@@ -184,11 +184,13 @@ gh auth status >/dev/null 2>&1 || die "GitHub CLI is not authenticated. Run: gh 
 
 # -------- helpers --------
 
+# Latest iOS version on the remote: "ios/X.Y.Z" tags plus bare "X.Y.Z" tags (SwiftPM
+# tags, and iOS releases from before the ios/ prefix). "android/X.Y.Z" is excluded.
 latest_semver_tag() {
   git ls-remote --tags --refs "https://github.com/${PUBLIC_REPO}.git" 2>/dev/null \
-    | awk -F/ '{print $NF}' | sed 's/\^{}//' \
-    | grep -E '^ios/[0-9]+\.[0-9]+\.[0-9]+$' | sed 's|^ios/||' \
-    | sort -V | tail -1
+    | awk '{print $2}' | sed -e 's|^refs/tags/||' -e 's|^ios/||' \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -V | tail -1 || true
 }
 
 bump_semver() {
@@ -261,6 +263,17 @@ changelog_notes_for_version() {
     }
     found{print}
   ' "$f" | sed 's/^[[:space:]]*\* /- /' | sed 's/^[[:space:]]*$//'
+}
+
+# Release notes for VERSION. Before publish, this release's entries still sit under
+# "## Unreleased" (renamed to "## VERSION" later in this script), so fall back to it.
+release_notes_from_changelog() {
+  local notes
+  notes="$(changelog_notes_for_version "$VERSION" | sed '/^$/d')"
+  if [[ -z "$notes" ]]; then
+    notes="$(changelog_notes_for_version "Unreleased" | sed '/^$/d')"
+  fi
+  echo "$notes"
 }
 
 resolve_version() {
@@ -465,6 +478,13 @@ if [[ "$CREATE_BRANCH" -eq 1 ]]; then
 fi
 
 IOS_TAG="ios/${VERSION}"
+# SwiftPM reads versions only from bare semver tags (X.Y.Z / vX.Y.Z) and ignores
+# "ios/X.Y.Z", so the release commit also gets a bare tag; without it, SPM consumers
+# (`from: "4.1.0"`) never see this version. The ios/ tag stays the GitHub Release tag
+# and the asset URL. The bare tag is pushed last, once the asset checksum is verified,
+# so SPM never resolves a version whose binary isn't downloadable yet.
+SPM_TAG="${VERSION}"
+SKIP_SPM_TAG_PUSH=0
 remote_tag_exists() {
   git ls-remote --tags "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${IOS_TAG}" | grep -q "refs/tags/${IOS_TAG}"
 }
@@ -489,9 +509,25 @@ if remote_tag_exists; then
   fi
 fi
 
+# The bare SPM tag must point at the same commit as the ios/ tag.
+REMOTE_SPM_SHA="$(git ls-remote --tags --refs "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${SPM_TAG}" | awk '{print $1}' | head -1)"
+if [[ -n "$REMOTE_SPM_SHA" && "$RETAG" -ne 1 ]]; then
+  REMOTE_IOS_SHA="$(git ls-remote --tags --refs "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${IOS_TAG}" | awk '{print $1}' | head -1)"
+  if [[ "$REMOTE_SPM_SHA" == "$REMOTE_IOS_SHA" ]]; then
+    echo "ℹ️  Tag '${SPM_TAG}' already exists on remote and matches '${IOS_TAG}'; will skip re-pushing it."
+    SKIP_SPM_TAG_PUSH=1
+  else
+    echo "❌ Tag '${SPM_TAG}' already exists on remote but does not point at '${IOS_TAG}'."
+    echo "   ${SPM_TAG}: ${REMOTE_SPM_SHA}"
+    echo "   ${IOS_TAG}: ${REMOTE_IOS_SHA:-(not on remote)}"
+    echo "   Use --retag to overwrite the remote tags, or bump with --bump patch|minor|major."
+    exit 1
+  fi
+fi
+
 # Resolve release notes from CHANGELOG-iOS.md if not provided
 if [[ -z "$RELEASE_NOTES" ]]; then
-  notes="$(changelog_notes_for_version "$VERSION" | sed '/^$/d')"
+  notes="$(release_notes_from_changelog)"
   if [[ -n "$notes" ]]; then
     RELEASE_NOTES="$notes"
     echo "ℹ️  Notes (from CHANGELOG-iOS.md):"
@@ -533,7 +569,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 
   # Preview release notes
   if [[ -z "$RELEASE_NOTES" ]]; then
-    notes="$(changelog_notes_for_version "$VERSION" | sed '/^$/d')"
+    notes="$(release_notes_from_changelog)"
     [[ -n "$notes" ]] && RELEASE_NOTES="$notes"
   fi
 
@@ -570,6 +606,11 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   fi
   echo "– Would tag: ${IOS_TAG}"
   echo "– Would push branch/tag to origin for ${PUBLIC_REPO}"
+  if [[ "$SKIP_SPM_TAG_PUSH" -eq 1 ]]; then
+    echo "– Would skip SwiftPM tag ${SPM_TAG} (already on remote, matches ${IOS_TAG})"
+  else
+    echo "– Would tag ${SPM_TAG} (SwiftPM version) at ${IOS_TAG}'s commit and push it after the asset checksum verifies"
+  fi
 
   if [[ "$PUSH_COCOAPODS" -eq 1 ]]; then
     echo
@@ -595,6 +636,7 @@ echo "  Public repo:    ${PUBLIC_REPO}"
 echo "  Catalyst:       $( [[ "$INCLUDE_CATALYST" == "1" ]] && echo ENABLED || echo DISABLED )"
 echo "  CocoaPods push: $( [[ "$PUSH_COCOAPODS" -eq 1 ]] && echo YES || echo "NO (--no-cocoapods)" )"
 echo "  Verify tag:     $( [[ "$SKIP_TAG_PUSH" -eq 1 ]] && echo "SKIP (tag exists)" || echo YES )"
+echo "  SwiftPM tag:    ${SPM_TAG}$( [[ "$SKIP_SPM_TAG_PUSH" -eq 1 ]] && echo " (SKIP, tag exists)" || echo " (pushed after checksum verify)" )"
 if [[ "$CREATE_BRANCH" -eq 1 ]]; then
   echo "  Branch:         ${BRANCH_NAME:-releases/${VERSION}}"
   [[ "$CREATE_PR" -eq 1 ]] && echo "  Pull request:   ${BRANCH_NAME:-releases/${VERSION}} → ${BASE_BRANCH}"
@@ -858,7 +900,27 @@ if [[ "$UPLOADED_CHECKSUM" != "$CHECKSUM" ]]; then
   exit 1
 fi
 
-# All good: undraft the release
+# All good: publish the bare SwiftPM version tag on the ios/ tag's commit.
+if [[ "$SKIP_SPM_TAG_PUSH" -eq 1 ]]; then
+  echo "↷ Skipping SwiftPM tag '${SPM_TAG}'; remote tag already exists and matches '${IOS_TAG}'."
+else
+  pushd "${REPO_ROOT}" >/dev/null
+  # When the ios/ tag push was skipped it may exist only on the remote.
+  if ! git rev-parse -q --verify "refs/tags/${IOS_TAG}" >/dev/null; then
+    git fetch origin "refs/tags/${IOS_TAG}:refs/tags/${IOS_TAG}" --quiet
+  fi
+  IOS_TAG_COMMIT="$(git rev-parse "${IOS_TAG}^{commit}")"
+  echo "▶ Tagging ${SPM_TAG} (SwiftPM version) at ${IOS_TAG} (${IOS_TAG_COMMIT:0:7})"
+  git tag -f "${SPM_TAG}" "${IOS_TAG_COMMIT}" >/dev/null
+  if [[ "$RETAG" -eq 1 ]]; then
+    git push --delete origin "${SPM_TAG}" >/dev/null 2>&1 || true
+  fi
+  # No `|| true`: if this push fails, SPM consumers never see the release, so stop here.
+  git push origin "${SPM_TAG}"
+  popd >/dev/null
+fi
+
+# Undraft the release
 gh release edit "$IOS_TAG" --repo "$PUBLIC_REPO" --draft=false >/dev/null 2>&1 || true
 
 # Optionally create PR and auto-merge
