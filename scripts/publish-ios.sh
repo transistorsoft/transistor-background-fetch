@@ -147,7 +147,7 @@ Options:
 
 Notes:
   If --version/--bump are omitted, the script will try to read the latest version
-  heading from CHANGELOG.md (e.g., "## 4.0.2") and prompt:
+  heading from CHANGELOG-iOS.md (e.g., "## 4.0.2") and prompt:
     > Publish version X.Y.Z? [y/N]
 USAGE
   exit 1
@@ -184,11 +184,13 @@ gh auth status >/dev/null 2>&1 || die "GitHub CLI is not authenticated. Run: gh 
 
 # -------- helpers --------
 
+# Latest iOS version on the remote: "ios/X.Y.Z" tags plus bare "X.Y.Z" tags (SwiftPM
+# tags, and iOS releases from before the ios/ prefix). "android/X.Y.Z" is excluded.
 latest_semver_tag() {
   git ls-remote --tags --refs "https://github.com/${PUBLIC_REPO}.git" 2>/dev/null \
-    | awk -F/ '{print $NF}' | sed 's/\^{}//' \
-    | grep -E '^ios/[0-9]+\.[0-9]+\.[0-9]+$' | sed 's|^ios/||' \
-    | sort -V | tail -1
+    | awk '{print $2}' | sed -e 's|^refs/tags/||' -e 's|^ios/||' \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -V | tail -1 || true
 }
 
 bump_semver() {
@@ -237,9 +239,9 @@ EOF
   fi
 }
 
-# Read top version from CHANGELOG.md
+# Read top version from CHANGELOG-iOS.md
 version_from_changelog() {
-  local changelog="${REPO_ROOT}/CHANGELOG.md"
+  local changelog="${REPO_ROOT}/CHANGELOG-iOS.md"
   if [[ -f "$changelog" ]]; then
     local v
     v="$(grep -E '^\s*##\s*v?[0-9]+\.[0-9]+\.[0-9]+' "$changelog" | head -1 | sed -E 's/^\s*##\s*v?([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')"
@@ -247,10 +249,10 @@ version_from_changelog() {
   fi
 }
 
-# Extract release notes for a specific version heading from CHANGELOG.md
+# Extract release notes for a specific version heading from CHANGELOG-iOS.md
 changelog_notes_for_version() {
   local v="$1"
-  local f="${REPO_ROOT}/CHANGELOG.md"
+  local f="${REPO_ROOT}/CHANGELOG-iOS.md"
   [[ -f "$f" ]] || return 0
   awk -v ver="$v" '
     BEGIN{found=0}
@@ -261,6 +263,17 @@ changelog_notes_for_version() {
     }
     found{print}
   ' "$f" | sed 's/^[[:space:]]*\* /- /' | sed 's/^[[:space:]]*$//'
+}
+
+# Release notes for VERSION. Before publish, this release's entries still sit under
+# "## Unreleased" (renamed to "## VERSION" later in this script), so fall back to it.
+release_notes_from_changelog() {
+  local notes
+  notes="$(changelog_notes_for_version "$VERSION" | sed '/^$/d')"
+  if [[ -z "$notes" ]]; then
+    notes="$(changelog_notes_for_version "Unreleased" | sed '/^$/d')"
+  fi
+  echo "$notes"
 }
 
 resolve_version() {
@@ -285,7 +298,7 @@ resolve_version() {
     return
   fi
 
-  # Try CHANGELOG.md as an interactive suggestion
+  # Try CHANGELOG-iOS.md as an interactive suggestion
   local from_changelog; from_changelog="$(version_from_changelog || true)"
   if [[ -n "$from_changelog" ]]; then
     VERSION_SOURCE="changelog"
@@ -305,9 +318,9 @@ resolve_version() {
   echo "dev"
 }
 
-# ---- Generate CHANGELOG.md from git log since last tag ----
+# ---- Generate CHANGELOG-iOS.md from git log since last tag ----
 generate_changelog() {
-  local changelog="${REPO_ROOT}/CHANGELOG.md"
+  local changelog="${REPO_ROOT}/CHANGELOG-iOS.md"
 
   # Find the most recent local tag that is an ancestor of HEAD
   local prev_tag=""
@@ -328,7 +341,7 @@ generate_changelog() {
     local entry_count
     entry_count="$(awk '/^## Unreleased/{found=1;next} /^##/{exit} found && /^\* /{c++} END{print c+0}' "$changelog")"
     if [[ "$entry_count" -gt 0 ]]; then
-      echo "ℹ️  CHANGELOG.md already has ${entry_count} entries under '## Unreleased' — skipping generation"
+      echo "ℹ️  CHANGELOG-iOS.md already has ${entry_count} entries under '## Unreleased' — skipping generation"
       return
     fi
   fi
@@ -343,12 +356,12 @@ generate_changelog() {
     > "$commits_file"
 
   if [[ ! -s "$commits_file" ]]; then
-    echo "ℹ️  No new commits since ${prev_tag} — nothing to add to CHANGELOG.md"
+    echo "ℹ️  No new commits since ${prev_tag} — nothing to add to CHANGELOG-iOS.md"
     rm -f "$commits_file"
     return
   fi
 
-  echo "▶ Generating CHANGELOG.md entries from commits since ${prev_tag}:"
+  echo "▶ Generating CHANGELOG-iOS.md entries from commits since ${prev_tag}:"
   sed 's/^/    /' "$commits_file"
 
   # Build new changelog with commits inserted under ## Unreleased
@@ -382,12 +395,12 @@ generate_changelog() {
 
   # Open in editor for curation
   local editor="${EDITOR:-vim}"
-  echo "▶ Opening CHANGELOG.md in ${editor} for review..."
+  echo "▶ Opening CHANGELOG-iOS.md in ${editor} for review..."
   "$editor" "$changelog"
 
   # Stage the updated changelog
-  git -C "$REPO_ROOT" add CHANGELOG.md
-  if ! git -C "$REPO_ROOT" diff --cached --quiet -- CHANGELOG.md; then
+  git -C "$REPO_ROOT" add CHANGELOG-iOS.md
+  if ! git -C "$REPO_ROOT" diff --cached --quiet -- CHANGELOG-iOS.md; then
     git -C "$REPO_ROOT" commit -m "Update CHANGELOG for ${VERSION}"
   fi
 }
@@ -403,7 +416,7 @@ fi
 
 # If version was inferred from CHANGELOG, prompt for confirmation
 if [[ "$VERSION_SOURCE" == "changelog" && "$AUTO_CONFIRM" -eq 0 ]]; then
-  echo "⚙️  Detected version ${VERSION} from CHANGELOG.md"
+  echo "⚙️  Detected version ${VERSION} from CHANGELOG-iOS.md"
   read -r -p "> Publish version ${VERSION}? [y/N] " _ans
   case "${_ans:-}" in
     y|Y|yes|YES)
@@ -465,6 +478,13 @@ if [[ "$CREATE_BRANCH" -eq 1 ]]; then
 fi
 
 IOS_TAG="ios/${VERSION}"
+# SwiftPM reads versions only from bare semver tags (X.Y.Z / vX.Y.Z) and ignores
+# "ios/X.Y.Z", so the release commit also gets a bare tag; without it, SPM consumers
+# (`from: "4.1.0"`) never see this version. The ios/ tag stays the GitHub Release tag
+# and the asset URL. The bare tag is pushed last, once the asset checksum is verified,
+# so SPM never resolves a version whose binary isn't downloadable yet.
+SPM_TAG="${VERSION}"
+SKIP_SPM_TAG_PUSH=0
 remote_tag_exists() {
   git ls-remote --tags "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${IOS_TAG}" | grep -q "refs/tags/${IOS_TAG}"
 }
@@ -489,12 +509,28 @@ if remote_tag_exists; then
   fi
 fi
 
-# Resolve release notes from CHANGELOG.md if not provided
+# The bare SPM tag must point at the same commit as the ios/ tag.
+REMOTE_SPM_SHA="$(git ls-remote --tags --refs "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${SPM_TAG}" | awk '{print $1}' | head -1)"
+if [[ -n "$REMOTE_SPM_SHA" && "$RETAG" -ne 1 ]]; then
+  REMOTE_IOS_SHA="$(git ls-remote --tags --refs "https://github.com/${PUBLIC_REPO}.git" "refs/tags/${IOS_TAG}" | awk '{print $1}' | head -1)"
+  if [[ "$REMOTE_SPM_SHA" == "$REMOTE_IOS_SHA" ]]; then
+    echo "ℹ️  Tag '${SPM_TAG}' already exists on remote and matches '${IOS_TAG}'; will skip re-pushing it."
+    SKIP_SPM_TAG_PUSH=1
+  else
+    echo "❌ Tag '${SPM_TAG}' already exists on remote but does not point at '${IOS_TAG}'."
+    echo "   ${SPM_TAG}: ${REMOTE_SPM_SHA}"
+    echo "   ${IOS_TAG}: ${REMOTE_IOS_SHA:-(not on remote)}"
+    echo "   Use --retag to overwrite the remote tags, or bump with --bump patch|minor|major."
+    exit 1
+  fi
+fi
+
+# Resolve release notes from CHANGELOG-iOS.md if not provided
 if [[ -z "$RELEASE_NOTES" ]]; then
-  notes="$(changelog_notes_for_version "$VERSION" | sed '/^$/d')"
+  notes="$(release_notes_from_changelog)"
   if [[ -n "$notes" ]]; then
     RELEASE_NOTES="$notes"
-    echo "ℹ️  Notes (from CHANGELOG.md):"
+    echo "ℹ️  Notes (from CHANGELOG-iOS.md):"
     echo "$RELEASE_NOTES" | sed 's/^/    /'
   fi
 fi
@@ -533,7 +569,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
 
   # Preview release notes
   if [[ -z "$RELEASE_NOTES" ]]; then
-    notes="$(changelog_notes_for_version "$VERSION" | sed '/^$/d')"
+    notes="$(release_notes_from_changelog)"
     [[ -n "$notes" ]] && RELEASE_NOTES="$notes"
   fi
 
@@ -542,8 +578,8 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "    MARKETING_VERSION=${VERSION}"
   echo "    CURRENT_PROJECT_VERSION=$(semver_to_project_version "$VERSION")"
 
-  if grep -q '^## Unreleased' "${REPO_ROOT}/CHANGELOG.md" 2>/dev/null; then
-    echo "– Would rename '## Unreleased' → '## ${VERSION} &mdash; $(date +%Y-%m-%d)' in CHANGELOG.md"
+  if grep -q '^## Unreleased' "${REPO_ROOT}/CHANGELOG-iOS.md" 2>/dev/null; then
+    echo "– Would rename '## Unreleased' → '## ${VERSION} &mdash; $(date +%Y-%m-%d)' in CHANGELOG-iOS.md"
   fi
 
   echo
@@ -570,6 +606,11 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   fi
   echo "– Would tag: ${IOS_TAG}"
   echo "– Would push branch/tag to origin for ${PUBLIC_REPO}"
+  if [[ "$SKIP_SPM_TAG_PUSH" -eq 1 ]]; then
+    echo "– Would skip SwiftPM tag ${SPM_TAG} (already on remote, matches ${IOS_TAG})"
+  else
+    echo "– Would tag ${SPM_TAG} (SwiftPM version) at ${IOS_TAG}'s commit and push it after the asset checksum verifies"
+  fi
 
   if [[ "$PUSH_COCOAPODS" -eq 1 ]]; then
     echo
@@ -595,6 +636,7 @@ echo "  Public repo:    ${PUBLIC_REPO}"
 echo "  Catalyst:       $( [[ "$INCLUDE_CATALYST" == "1" ]] && echo ENABLED || echo DISABLED )"
 echo "  CocoaPods push: $( [[ "$PUSH_COCOAPODS" -eq 1 ]] && echo YES || echo "NO (--no-cocoapods)" )"
 echo "  Verify tag:     $( [[ "$SKIP_TAG_PUSH" -eq 1 ]] && echo "SKIP (tag exists)" || echo YES )"
+echo "  SwiftPM tag:    ${SPM_TAG}$( [[ "$SKIP_SPM_TAG_PUSH" -eq 1 ]] && echo " (SKIP, tag exists)" || echo " (pushed after checksum verify)" )"
 if [[ "$CREATE_BRANCH" -eq 1 ]]; then
   echo "  Branch:         ${BRANCH_NAME:-releases/${VERSION}}"
   [[ "$CREATE_PR" -eq 1 ]] && echo "  Pull request:   ${BRANCH_NAME:-releases/${VERSION}} → ${BASE_BRANCH}"
@@ -667,14 +709,14 @@ if gh release view "$IOS_TAG" --repo "$PUBLIC_REPO" >/dev/null 2>&1; then
   fi
 fi
 
-# ---- Rename Unreleased heading in CHANGELOG.md ----
-CHANGELOG_PATH="${REPO_ROOT}/CHANGELOG.md"
+# ---- Rename Unreleased heading in CHANGELOG-iOS.md ----
+CHANGELOG_PATH="${REPO_ROOT}/CHANGELOG-iOS.md"
 TODAY="$(date +%Y-%m-%d)"
 if [[ -f "$CHANGELOG_PATH" ]] && grep -q '^## Unreleased' "$CHANGELOG_PATH"; then
-  echo "▶ Renaming '## Unreleased' → '## ${VERSION} &mdash; ${TODAY}' in CHANGELOG.md"
+  echo "▶ Renaming '## Unreleased' → '## ${VERSION} &mdash; ${TODAY}' in CHANGELOG-iOS.md"
   sed -i '' "s/^## Unreleased/## ${VERSION} \&mdash; ${TODAY}/" "$CHANGELOG_PATH"
-  git -C "$REPO_ROOT" add CHANGELOG.md
-  if ! git -C "$REPO_ROOT" diff --cached --quiet -- CHANGELOG.md; then
+  git -C "$REPO_ROOT" add CHANGELOG-iOS.md
+  if ! git -C "$REPO_ROOT" diff --cached --quiet -- CHANGELOG-iOS.md; then
     git -C "$REPO_ROOT" commit -m "Bump changelog: ${VERSION}"
   fi
 fi
@@ -692,7 +734,7 @@ import PackageDescription
 let package = Package(
     name: "${BINARY_NAME}",
     // iOS 13 required by the Swift overlay (async/await + BGTaskScheduler).
-    platforms: [.iOS(.v13)],
+    platforms: [.iOS(.v15)],
     products: [
         .library(name: "${BINARY_NAME}", targets: ["${BINARY_NAME}"]),
         .library(name: "BackgroundFetch", targets: ["BackgroundFetch"])
@@ -726,7 +768,7 @@ Pod::Spec.new do |s|
   s.license             = { :type => 'MIT', :file => 'LICENSE' }
   s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }
   s.source              = { :http => '${ASSET_URL}' }
-  s.ios.deployment_target = '12.0'
+  s.ios.deployment_target = '15.0'
   s.vendored_frameworks = '${BINARY_NAME}.xcframework'
   s.static_framework    = true
   s.frameworks          = 'UIKit'
@@ -760,7 +802,7 @@ replacements = {
   /^\s*s\.summary\s*=.*$/i            => "  s.summary             = 'Background fetch & periodic background tasks for iOS.'",
   /^\s*s\.description\s*=.*$/i        => "  s.description         = 'Lightweight, open-source Background Fetch that wraps BGTaskScheduler / background fetch to deliver reliable periodic callbacks.'",
   /^\s*s\.author\s*=.*$/i             => "  s.author              = { 'Transistor Software' => 'info@transistorsoft.com' }",
-  /^\s*s\.ios\.deployment_target\s*=.*$/i => "  s.ios.deployment_target = '12.0'",
+  /^\s*s\.ios\.deployment_target\s*=.*$/i => "  s.ios.deployment_target = '15.0'",
   /^\s*s\.static_framework\s*=.*$/i   => "  s.static_framework    = true",
   /^\s*s\.pod_target_xcconfig\s*=.*$/i => "  s.pod_target_xcconfig = { 'BUILD_LIBRARY_FOR_DISTRIBUTION' => 'YES' }",
 }
@@ -858,7 +900,27 @@ if [[ "$UPLOADED_CHECKSUM" != "$CHECKSUM" ]]; then
   exit 1
 fi
 
-# All good: undraft the release
+# All good: publish the bare SwiftPM version tag on the ios/ tag's commit.
+if [[ "$SKIP_SPM_TAG_PUSH" -eq 1 ]]; then
+  echo "↷ Skipping SwiftPM tag '${SPM_TAG}'; remote tag already exists and matches '${IOS_TAG}'."
+else
+  pushd "${REPO_ROOT}" >/dev/null
+  # When the ios/ tag push was skipped it may exist only on the remote.
+  if ! git rev-parse -q --verify "refs/tags/${IOS_TAG}" >/dev/null; then
+    git fetch origin "refs/tags/${IOS_TAG}:refs/tags/${IOS_TAG}" --quiet
+  fi
+  IOS_TAG_COMMIT="$(git rev-parse "${IOS_TAG}^{commit}")"
+  echo "▶ Tagging ${SPM_TAG} (SwiftPM version) at ${IOS_TAG} (${IOS_TAG_COMMIT:0:7})"
+  git tag -f "${SPM_TAG}" "${IOS_TAG_COMMIT}" >/dev/null
+  if [[ "$RETAG" -eq 1 ]]; then
+    git push --delete origin "${SPM_TAG}" >/dev/null 2>&1 || true
+  fi
+  # No `|| true`: if this push fails, SPM consumers never see the release, so stop here.
+  git push origin "${SPM_TAG}"
+  popd >/dev/null
+fi
+
+# Undraft the release
 gh release edit "$IOS_TAG" --repo "$PUBLIC_REPO" --draft=false >/dev/null 2>&1 || true
 
 # Optionally create PR and auto-merge

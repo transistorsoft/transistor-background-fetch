@@ -3,9 +3,8 @@ import PackageDescription
 
 let package = Package(
     name: "TSBackgroundFetch",
-    // iOS 13 is required by the Swift overlay (async/await + BGTaskScheduler).
-    // The Objective-C binary itself still supports iOS 12 via CocoaPods (see the podspec).
-    platforms: [.iOS(.v13)],
+    // iOS 15 is the floor: Xcode 27 refuses any deployment target below it (the podspec says the same).
+    platforms: [.iOS(.v15)],
     products: [
         // Objective-C binary framework.
         // Consumed by the plugin bridges (React Native, Cordova, Capacitor, Flutter)
