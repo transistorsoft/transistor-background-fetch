@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## Unreleased
+* [iOS] A legacy background fetch (`application:performFetchWithCompletionHandler:`, forwarded to the SDK) that
+  arrives while no fetch listener is registered (each plugin's `stop()` removes its listener) is now completed at
+  once with no data. Before, the SDK requested the fetch again and held it until its time ran out without ever
+  completing it, so iOS recorded an error. Removing the last listener also resets UIKit's legacy fetch interval,
+  which the SDK sets where BGTaskScheduler is unavailable (the iOS Simulator) and where the app does not list
+  `com.transistorsoft.fetch` in `BGTaskSchedulerPermittedIdentifiers`. A legacy fetch whose time runs out with no
+  unfinished listener is now completed as failed (WO-004).
+
 ## 4.2.0 &mdash; 2026-11-05
 * [iOS] The minimum iOS is 15.0 (was 12.0; Package.swift said 13). Xcode 27 refuses any deployment target
   below 15.0 as an error, where Xcode 26 warned, so the framework, the podspec and Package.swift now say
