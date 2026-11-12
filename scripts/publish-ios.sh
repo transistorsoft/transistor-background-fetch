@@ -5,28 +5,33 @@ set -euo pipefail
 # TSBackgroundFetch iOS — Build & Publish
 #
 # Usage:
-# ONESHOT RELEASE
-#   ./scripts/publish-ios.sh --version 4.0.4 --create-branch --push-cocoapods
+#   ./scripts/publish-ios.sh --version X.Y.Z --dry-run                # preview: build + package only
+#   ./scripts/publish-ios.sh --version X.Y.Z [--notes "msg"]          # publish, INCLUDING the CocoaPods Trunk push
+#   ./scripts/publish-ios.sh --version X.Y.Z --no-cocoapods           # publish, skip Trunk (push the podspec by hand)
+#   INCLUDE_CATALYST=0 ./scripts/publish-ios.sh --version X.Y.Z
 #
-#   ./scripts/publish-ios.sh --version 4.0.1 [--notes "msg"] [--push-cocoapods]
-#   ./scripts/publish-ios.sh --bump patch|minor|major [--notes "msg"]
-#   INCLUDE_CATALYST=0 ./scripts/publish-ios.sh --version 4.0.1
-#   ./scripts/publish-ios.sh --version 4.0.1 --dry-run
-#   ./scripts/publish-ios.sh --version 4.0.2 --create-branch --create-pr
-#   ./scripts/publish-ios.sh --version 4.0.2 --create-branch --branch-name releases/4.0.2 --base main --create-pr --auto-merge squash
+#   For a release, use --version (not --bump) and don't use --create-branch: see Options.
 #
 # Options:
-#   --version X.Y.Z         Explicit version to publish/tag.
+#   --version X.Y.Z         Explicit version to publish/tag. Use this rather than --bump.
 #   --bump (patch|minor|major)
-#                          Bump from latest remote semver tag.
+#                          Bump from latest remote semver tag. If `git ls-remote` fails, the latest
+#                          tag falls back to 0.0.0 without a warning, so --bump patch gives 0.0.1.
 #   --notes "text"          Release notes (defaults to "<BINARY> <VERSION>").
-#   --dry-run               Build and package only (no GitHub, no commits/tags).
+#   --dry-run               Build and package only (no GitHub, no commits/tags). It does not stop
+#                          --create-branch from switching branches.
 #   --no-build              Skip building xcframework (use --xcframework-dir).
 #   --xcframework-dir PATH  Use an existing .xcframework directory.
-#   --push-cocoapods        Run `pod spec lint` + `pod trunk push` at the end.
-#   --no-cocoapods          Skip CocoaPods trunk push.
+#   --push-cocoapods        Run `pod spec lint` + `pod trunk push` at the end. This is the DEFAULT
+#                          (PUSH_COCOAPODS=1), so the flag changes nothing.
+#   --no-cocoapods          Skip the CocoaPods Trunk push, and the `pod trunk me` check at startup.
+#                          Then push the podspec by hand from the tagged commit, following the
+#                          Trunk retry rules in WO-001.
 #   --retag                 Overwrite the existing remote tag if already present.
-#   --create-branch          Create and switch to a release branch before making edits (default name: releases/<VERSION>)
+#   --create-branch          NOT FOR RELEASES. Switches to a branch cut from origin/<base> (default
+#                           name: releases/<VERSION>) AFTER the "Bump version" commit was made on
+#                           the current branch, so the framework is built with the previous
+#                           version. The switch happens even with --dry-run.
 #   --branch-name NAME       Override the branch name used with --create-branch
 #   --base BRANCH            Base branch to branch from and target PR to (auto-detects origin/HEAD)
 #   --create-pr              Open a GitHub pull request from the release branch to --base
@@ -43,12 +48,20 @@ set -euo pipefail
 #   - Xcode command-line tools
 #   - zip, swift
 #   - GitHub CLI (`gh`) authenticated for the PUBLIC_REPO owner
-#   - CocoaPods (`pod`) if using --push-cocoapods
+#   - CocoaPods (`pod`) with a Trunk session for the publishing account (checked at startup
+#     with `pod trunk me`), unless --no-cocoapods
 #
 # Notes:
 #   - This script operates directly on THIS repo (public).
 #   - The GitHub Release is created/updated and the xcframework zip is uploaded.
 #   - Package.swift and the podspec are updated in-place (commit + tag + push).
+#   - Run it from an interactive terminal. It commits "Bump version to <VERSION>" (and, if it
+#     opened $EDITOR on CHANGELOG-iOS.md, "Update CHANGELOG for <VERSION>") BEFORE it asks
+#     "Proceed with publish? [y/N]", so answering N leaves those commits on the current branch.
+#   - CocoaPods Trunk is read-only from 2026-12-02 (WO-001): from then on, pass
+#     --no-cocoapods. To retry a failed Trunk push, push the podspec by hand; never re-run this
+#     script for it. A re-run rebuilds the zip, whose checksum then differs from the uploaded
+#     asset, and --retag would replace the asset that SwiftPM users have already resolved.
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -76,7 +89,7 @@ if [[ -f "${VERSION_FILE}" ]]; then
   fi
 fi
 
-# --- CocoaPods trunk session guard (fail-fast when --push-cocoapods is set) ---
+# --- CocoaPods trunk session guard (fail-fast unless --no-cocoapods; pushing is the default) ---
 require_cocoapods_trunk() {
   [[ "$PUSH_COCOAPODS" -eq 1 ]] || return 0
 
@@ -124,13 +137,14 @@ AUTO_CONFIRM=0
 usage() {
   cat <<USAGE
 Usage:
-  ./scripts/publish-ios.sh --version X.Y.Z [--notes "msg"] [--push-cocoapods] [--retag]
+  ./scripts/publish-ios.sh --version X.Y.Z [--notes "msg"] [--no-cocoapods] [--retag]
   ./scripts/publish-ios.sh --bump patch|minor|major [--notes "msg"]
   INCLUDE_CATALYST=0 ./scripts/publish-ios.sh --version X.Y.Z
 
 Options:
   --version X.Y.Z           Explicit version to publish/tag
-  --bump patch|minor|major  Bump from latest remote semver tag
+  --bump patch|minor|major  Bump from latest remote semver tag (falls back to 0.0.0 if the
+                            lookup fails; prefer --version)
   --notes "text"            Release notes text
   --dry-run                 Build and package only (no Git, no tags, no GitHub release).
   --no-build                Skip building (requires --xcframework-dir)
@@ -138,7 +152,9 @@ Options:
   --push-cocoapods          Run pod lint + trunk push at the end (default)
   --no-cocoapods            Skip CocoaPods trunk push
   --retag                   Overwrite existing remote tag if present
-  --create-branch            Create and switch to a release branch (default: releases/<VERSION>)
+  --create-branch            Switch to a new branch (default: releases/<VERSION>). NOT for releases:
+                             it is cut from the base after the version-bump commit, so the framework
+                             reports the previous version. It switches even under --dry-run.
   --branch-name NAME         Override branch name when using --create-branch
   --base BRANCH              Base branch to branch from / PR target (auto-detected)
   --create-pr                Open a GitHub PR from the release branch to --base
@@ -459,7 +475,8 @@ if [[ -z "$BASE_BRANCH" ]]; then
 fi
 echo "ℹ️  Base branch: ${BASE_BRANCH}"
 
-# Optionally create and switch to a release branch before making edits
+# Optionally create and switch to a release branch. This runs AFTER the "Bump version" commit
+# above and is not skipped by --dry-run, so it is not for releases (see --create-branch in the header).
 if [[ "$CREATE_BRANCH" -eq 1 ]]; then
   if [[ -z "$BRANCH_NAME" ]]; then
     _ver_for_branch="$VERSION"
@@ -956,16 +973,16 @@ fi
 if [[ "${PUSH_COCOAPODS}" -eq 0 ]]; then
   if [[ -n "${PODSPEC_NAME}" && -f "${PODSPEC_PATH}" ]]; then
     echo ""
-    echo "ℹ️  CocoaPods push skipped (no --push-cocoapods)."
+    echo "ℹ️  CocoaPods push skipped (--no-cocoapods)."
     echo "    If you intend to publish ${BINARY_NAME} ${VERSION} to CocoaPods, run:"
     echo "      pod spec lint \"${PODSPEC_PATH}\" --skip-import-validation --allow-warnings"
     echo "      pod trunk push \"${PODSPEC_PATH}\" --skip-import-validation --allow-warnings"
-    echo "    (Or rerun this script with --push-cocoapods to automate these steps.)"
+    echo "    Follow the Trunk retry rules in WO-001; don't re-run this script to push."
     echo ""
   else
     echo ""
     echo "ℹ️  CocoaPods push skipped, and no podspec was found at '${PODSPEC_PATH}'."
-    echo "    If you plan to publish to CocoaPods, ensure the podspec exists and rerun with --push-cocoapods."
+    echo "    If you plan to publish to CocoaPods, ensure the podspec exists and push it by hand (pod trunk push)."
     echo ""
   fi
 fi
