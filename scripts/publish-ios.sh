@@ -13,7 +13,9 @@ set -euo pipefail
 #   For a release, use --version (not --bump) and don't use --create-branch: see Options.
 #
 # Options:
-#   --version X.Y.Z         Explicit version to publish/tag. Use this rather than --bump.
+#   --version X.Y.Z         Explicit version to publish/tag. Always pass it (rather than --bump):
+#                          with neither, the script targets MARKETING_VERSION from
+#                          versioning/<BINARY>.properties, normally the version already released.
 #   --bump (patch|minor|major)
 #                          Bump from latest remote semver tag. If `git ls-remote` fails, the latest
 #                          tag falls back to 0.0.0 without a warning, so --bump patch gives 0.0.1.
@@ -162,9 +164,10 @@ Options:
   --yes, -y                  Skip interactive confirmation prompt (for CI/automation)
 
 Notes:
-  If --version/--bump are omitted, the script will try to read the latest version
-  heading from CHANGELOG-iOS.md (e.g., "## 4.0.2") and prompt:
-    > Publish version X.Y.Z? [y/N]
+  Always pass --version X.Y.Z. If --version and --bump are both omitted, the script
+  uses MARKETING_VERSION from versioning/TSBackgroundFetch.properties (normally the
+  version already released) with no version prompt: only the final
+  "Proceed with publish?" summary shows it.
 USAGE
   exit 1
 }
