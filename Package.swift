@@ -18,8 +18,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "TSBackgroundFetch",
-            url: "https://github.com/transistorsoft/transistor-background-fetch/releases/download/ios/4.2.0/TSBackgroundFetch.xcframework.zip",
-            checksum: "97cacb3b7137cef7ca8a7a7dd491ef3ab2deedf576281a1f01c009414521cf64"
+            url: "https://github.com/transistorsoft/transistor-background-fetch/releases/download/ios/4.2.1/TSBackgroundFetch.xcframework.zip",
+            checksum: "93e8b3ac1b87364bc8bc60c3ceca4dfbd045487e8416519c0238bda399b6844e"
         ),
 
         // Swift convenience layer that re-exports the binary.  The sources are the
