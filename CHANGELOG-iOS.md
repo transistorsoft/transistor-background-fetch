@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## 4.2.1 &mdash; 2026-11-12
 * [iOS] A legacy background fetch (`application:performFetchWithCompletionHandler:`, forwarded to the SDK) that
   arrives while no fetch listener is registered (each plugin's `stop()` removes its listener) is now completed at
   once with no data. Before, the SDK requested the fetch again and held it until its time ran out without ever
