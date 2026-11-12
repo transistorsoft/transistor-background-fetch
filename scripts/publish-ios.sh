@@ -10,15 +10,13 @@ set -euo pipefail
 #   ./scripts/publish-ios.sh --version X.Y.Z --no-cocoapods           # publish, skip Trunk (push the podspec by hand)
 #   INCLUDE_CATALYST=0 ./scripts/publish-ios.sh --version X.Y.Z
 #
-#   For a release, use --version (not --bump) and don't use --create-branch: see Options.
+#   One of --version or --bump is required: there is no default version. Don't use --create-branch
+#   for a release: see Options.
 #
 # Options:
-#   --version X.Y.Z         Explicit version to publish/tag. Always pass it (rather than --bump):
-#                          with neither, the script targets MARKETING_VERSION from
-#                          versioning/<BINARY>.properties, normally the version already released.
+#   --version X.Y.Z         Explicit version to publish/tag. This or --bump is required.
 #   --bump (patch|minor|major)
-#                          Bump from latest remote semver tag. If `git ls-remote` fails, the latest
-#                          tag falls back to 0.0.0 without a warning, so --bump patch gives 0.0.1.
+#                          Bump from latest remote semver tag. Stops if that tag can't be read.
 #   --notes "text"          Release notes (defaults to "<BINARY> <VERSION>").
 #   --dry-run               Build and package only (no GitHub, no commits/tags). It does not stop
 #                          --create-branch from switching branches.
@@ -132,7 +130,6 @@ BRANCH_NAME=""
 BASE_BRANCH=""
 CREATE_PR=0
 AUTO_MERGE=""
-VERSION_SOURCE=""
 SKIP_TAG_PUSH=0
 AUTO_CONFIRM=0
 
@@ -144,9 +141,8 @@ Usage:
   INCLUDE_CATALYST=0 ./scripts/publish-ios.sh --version X.Y.Z
 
 Options:
-  --version X.Y.Z           Explicit version to publish/tag
-  --bump patch|minor|major  Bump from latest remote semver tag (falls back to 0.0.0 if the
-                            lookup fails; prefer --version)
+  --version X.Y.Z           Explicit version to publish/tag (this or --bump is required)
+  --bump patch|minor|major  Bump from latest remote semver tag (stops if it can't be read)
   --notes "text"            Release notes text
   --dry-run                 Build and package only (no Git, no tags, no GitHub release).
   --no-build                Skip building (requires --xcframework-dir)
@@ -164,10 +160,8 @@ Options:
   --yes, -y                  Skip interactive confirmation prompt (for CI/automation)
 
 Notes:
-  Always pass --version X.Y.Z. If --version and --bump are both omitted, the script
-  uses MARKETING_VERSION from versioning/TSBackgroundFetch.properties (normally the
-  version already released) with no version prompt: only the final
-  "Proceed with publish?" summary shows it.
+  There is no default version: pass --version X.Y.Z or --bump. The versioning file
+  (versioning/TSBackgroundFetch.properties) normally holds the version already released.
 USAGE
   exit 1
 }
@@ -193,6 +187,15 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown arg: $1"; usage;;
   esac
 done
+
+# A version is required, as in publish-android.sh. There is no default, because the versioning file
+# normally holds the version already released.
+if [[ -n "$VERSION" && -n "$BUMP_MODE" ]]; then
+  die "--version and --bump are mutually exclusive"
+fi
+if [[ -z "$VERSION" && -z "$BUMP_MODE" ]]; then
+  die "Pass --version X.Y.Z (or --bump patch|minor|major). There is no default: versioning/${BINARY_NAME}.properties (${MARKETING_VERSION:-unset}) normally holds the version already released."
+fi
 
 # Fail fast: check CocoaPods trunk session before doing anything
 require_cocoapods_trunk
@@ -258,16 +261,6 @@ EOF
   fi
 }
 
-# Read top version from CHANGELOG-iOS.md
-version_from_changelog() {
-  local changelog="${REPO_ROOT}/CHANGELOG-iOS.md"
-  if [[ -f "$changelog" ]]; then
-    local v
-    v="$(grep -E '^\s*##\s*v?[0-9]+\.[0-9]+\.[0-9]+' "$changelog" | head -1 | sed -E 's/^\s*##\s*v?([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')"
-    [[ -n "$v" ]] && echo "$v"
-  fi
-}
-
 # Extract release notes for a specific version heading from CHANGELOG-iOS.md
 changelog_notes_for_version() {
   local v="$1"
@@ -295,46 +288,18 @@ release_notes_from_changelog() {
   echo "$notes"
 }
 
+# The version to publish: --version as given, or --bump applied to the latest remote tag. The check after
+# the argument loop guarantees exactly one of the two.
 resolve_version() {
-  if [[ -n "$VERSION" && -n "$BUMP_MODE" ]]; then die "--version and --bump are mutually exclusive"; fi
-
   if [[ -n "$VERSION" ]]; then
-    VERSION_SOURCE="arg"
     echo "$VERSION"
     return
   fi
 
-  if [[ -n "$BUMP_MODE" ]]; then
-    local latest; latest="$(latest_semver_tag)"; [[ -n "$latest" ]] || latest='0.0.0'
-    VERSION_SOURCE="bump"
-    bump_semver "$latest" "$BUMP_MODE"
-    return
-  fi
-
-  if [[ -n "${MARKETING_VERSION:-}" ]]; then
-    VERSION_SOURCE="marketing"
-    echo "$MARKETING_VERSION"
-    return
-  fi
-
-  # Try CHANGELOG-iOS.md as an interactive suggestion
-  local from_changelog; from_changelog="$(version_from_changelog || true)"
-  if [[ -n "$from_changelog" ]]; then
-    VERSION_SOURCE="changelog"
-    echo "$from_changelog"
-    return
-  fi
-
-  # Fallback to latest remote semver tag
+  # --bump: stop if the latest tag can't be read (network, auth, no tags) instead of counting up from 0.0.0.
   local latest; latest="$(latest_semver_tag)"
-  if [[ -n "$latest" ]]; then
-    VERSION_SOURCE="remote"
-    echo "$latest"
-    return
-  fi
-
-  VERSION_SOURCE="dev"
-  echo "dev"
+  [[ -n "$latest" ]] || die "Couldn't read the latest iOS tag from ${PUBLIC_REPO}, so --bump can't work out the next version. Pass --version X.Y.Z."
+  bump_semver "$latest" "$BUMP_MODE"
 }
 
 # ---- Generate CHANGELOG-iOS.md from git log since last tag ----
@@ -426,24 +391,11 @@ generate_changelog() {
 
 VERSION="$(resolve_version)"
 
-# Coerce VERSION to pure semver (e.g., "## 4.0.2 — 2025-11-07" -> "4.0.2")
+# Coerce VERSION to pure semver (e.g., "v4.0.2" -> "4.0.2")
 if [[ -n "${VERSION:-}" ]]; then
   if [[ "$VERSION" =~ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
     VERSION="${BASH_REMATCH[1]}"
   fi
-fi
-
-# If version was inferred from CHANGELOG, prompt for confirmation
-if [[ "$VERSION_SOURCE" == "changelog" && "$AUTO_CONFIRM" -eq 0 ]]; then
-  echo "⚙️  Detected version ${VERSION} from CHANGELOG-iOS.md"
-  read -r -p "> Publish version ${VERSION}? [y/N] " _ans
-  case "${_ans:-}" in
-    y|Y|yes|YES)
-      ;;
-    *)
-      die "Aborted. Provide --version X.Y.Z or use --bump patch|minor|major."
-      ;;
-  esac
 fi
 
 # Update versioning file (skip in dry-run mode)
