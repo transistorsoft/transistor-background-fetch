@@ -143,11 +143,13 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
         BGTaskScheduler *scheduler = [BGTaskScheduler sharedScheduler];
         [scheduler cancelTaskRequestWithIdentifier:BACKGROUND_REFRESH_TASK_ID];
         fetchScheduled = NO;
-    } else {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalNever];
-        });
     }
+    // (WO-004) On every iOS: scheduleBGAppRefresh arms UIKit's legacy interval where BGTaskScheduler is unavailable (the
+    // Simulator) and where the app does not permit com.transistorsoft.fetch (a device too).  The interval governs only
+    // the fetches iOS schedules itself; one SpringBoard delivers still arrives, and performFetch… answers it.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[UIApplication sharedApplication] setMinimumBackgroundFetchInterval:UIApplicationBackgroundFetchIntervalNever];
+    });
 }
 
 -(void) setMinimumFetchInterval {
@@ -178,24 +180,65 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
 /// @deprecated Old-syle fetch callback.
 - (void) performFetchWithCompletionHandler:(void (^)(UIBackgroundFetchResult))handler applicationState:(UIApplicationState)state {
     NSLog(@"[%@ performFetchWithCompletionHandler]", TAG);
-        
+
+    if ([[TSBGAppRefreshSubscriber subscribers] count] == 0) {
+        // (WO-004) No subscriber is registered (stop() removed the last, or none was ever added): answer UIKit now
+        // instead of holding its fetch for a listener that may never come, and reschedule nothing, which would arm again
+        // what stop() cancelled.  UIKit delivers this fetch whatever the legacy interval is.
+        NSLog(@"[%@ performFetchWithCompletionHandler] no subscriber: completed with no data", TAG);
+        handler(UIBackgroundFetchResultNoData);
+        return;
+    }
+
     fetchScheduled = NO;
     [self scheduleBGAppRefresh];
-    
-    _completionHandler = handler;
+
+    @synchronized (self) {
+        _completionHandler = handler;
+    }
     if (_backgroundTask != UIBackgroundTaskInvalid) [[UIApplication sharedApplication] endBackgroundTask:_backgroundTask];
     // Create a UIBackgroundTask for detecting task-expiration with old API.
     _backgroundTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
-        if (self.completionHandler) {
-            [TSBGAppRefreshSubscriber onTimeout];
-        }
-        @synchronized (self) {
-            [[UIApplication sharedApplication] endBackgroundTask:self.backgroundTask];
-            self.backgroundTask = UIBackgroundTaskInvalid;
-        }
+        [self _expireLegacyFetch];
     }];
-    
+
     [TSBGAppRefreshSubscriber execute];
+}
+
+/// The legacy fetch's UIBackgroundTask expired before every subscriber finished.
+- (void) _expireLegacyFetch {
+    BOOL held;
+    @synchronized (self) {
+        held = (_completionHandler != nil);
+    }
+    if (held) {
+        // (WO-004) Only an unfinished subscriber takes the timeout, though +onTimeout counts finished ones too.  With
+        // none, complete UIKit's handler, as handleBGAppRefreshTask's expiration handler completes its task with NO when
+        // no subscriber is left.  Left uncalled, SpringBoard records the fetch as an error.
+        BOOL unfinished = NO;
+        for (TSBGAppRefreshSubscriber *subscriber in [[TSBGAppRefreshSubscriber subscribers] allValues]) {
+            if (!subscriber.finished) { unfinished = YES; break; }
+        }
+        [TSBGAppRefreshSubscriber onTimeout];
+        if (!unfinished) {
+            void (^handler)(UIBackgroundFetchResult) = [self _takeCompletionHandler];
+            if (handler) handler(UIBackgroundFetchResultFailed);
+        }
+    }
+    @synchronized (self) {
+        [[UIApplication sharedApplication] endBackgroundTask:self.backgroundTask];
+        self.backgroundTask = UIBackgroundTaskInvalid;
+    }
+}
+
+/// (WO-004) The held legacy handler, taken at most once.  Two paths complete it: a subscriber's finish, on its caller's
+/// thread (React Native's module queue among them), and the UIBackgroundTask's expiry, on main.
+- (void (^)(UIBackgroundFetchResult)) _takeCompletionHandler {
+    @synchronized (self) {
+        void (^handler)(UIBackgroundFetchResult) = _completionHandler;
+        _completionHandler = nil;
+        return handler;
+    }
 }
 
 -(void) status:(void(^)(UIBackgroundRefreshStatus status))callback
@@ -373,9 +416,11 @@ static NSString *const PERMITTED_IDENTIFIERS_KEY    = @"BGTaskSchedulerPermitted
             [(BGAppRefreshTask*) bgAppRefreshTask setTaskCompletedWithSuccess:YES];
         }
         bgAppRefreshTask = nil;
-    } else if (_completionHandler) {
-        _completionHandler(UIBackgroundFetchResultNewData);
-        _completionHandler = nil;
+    } else {
+        // (WO-004) Taken under the lock the expiry takes it under (_takeCompletionHandler): one of the two completes it.
+        void (^handler)(UIBackgroundFetchResult) = [self _takeCompletionHandler];
+        if (!handler) return;
+        handler(UIBackgroundFetchResultNewData);
         @synchronized (self) {
             if (_backgroundTask != UIBackgroundTaskInvalid) {
                 [[UIApplication sharedApplication] endBackgroundTask:_backgroundTask];
