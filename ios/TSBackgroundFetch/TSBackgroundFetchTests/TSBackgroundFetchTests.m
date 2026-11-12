@@ -7,6 +7,7 @@
 //
 
 #import <XCTest/XCTest.h>
+#import <objc/runtime.h>
 #import <TSBackgroundFetch/TSBackgroundFetch.h>
 
 // ============================================================================
@@ -726,6 +727,233 @@
 - (void)testStopUnknownIdentifierDoesNotCrash {
     TSBackgroundFetch *fetch = [TSBackgroundFetch sharedInstance];
     XCTAssertNoThrow([fetch stop:@"com.test.nothing"], @"stop with unknown identifier should not crash");
+}
+
+@end
+
+// ============================================================================
+#pragma mark - WO-004: stop() and the legacy fetch
+// ============================================================================
+
+// (WO-004) The private methods these tests drive directly: cancelBGAppRefresh runs when the last listener is removed
+// (stop()), and _expireLegacyFetch when a legacy fetch's UIBackgroundTask expires, which a test cannot make UIKit do.
+@interface TSBackgroundFetch (WO004Testing)
+-(void) cancelBGAppRefresh;
+-(void) _expireLegacyFetch;
+@end
+
+// This target has no host app (it runs in the xctest process), so UIApplication.sharedApplication is nil.  A stand-in
+// takes its place while a test needs to see what the SDK hands UIKit: the legacy fetch intervals it sets, and the
+// background tasks it begins.
+@interface WO004Application : NSObject
+@property (nonatomic, readonly) NSMutableArray<NSNumber *> *intervals;
+@property (nonatomic, readonly) NSInteger backgroundTasksBegun;
+@end
+
+@implementation WO004Application
+- (instancetype)init {
+    if ((self = [super init])) _intervals = [NSMutableArray array];
+    return self;
+}
+- (void)setMinimumBackgroundFetchInterval:(NSTimeInterval)interval {
+    [_intervals addObject:@(interval)];
+}
+- (UIBackgroundTaskIdentifier)beginBackgroundTaskWithExpirationHandler:(void (^)(void))handler {
+    _backgroundTasksBegun++;
+    return UIBackgroundTaskInvalid;
+}
+- (void)endBackgroundTask:(UIBackgroundTaskIdentifier)identifier {
+}
+@end
+
+static WO004Application *wo004Application;
+
+@interface UIApplication (WO004Testing)
++ (UIApplication *)wo004_sharedApplication;
+@end
+
+@implementation UIApplication (WO004Testing)
++ (UIApplication *)wo004_sharedApplication {
+    return (UIApplication *)wo004Application;
+}
+@end
+
+static void WO004ExchangeSharedApplication(void) {
+    method_exchangeImplementations(class_getClassMethod([UIApplication class], @selector(sharedApplication)),
+                                   class_getClassMethod([UIApplication class], @selector(wo004_sharedApplication)));
+}
+
+@interface TSBackgroundFetchWO004Tests : XCTestCase
+@end
+
+@implementation TSBackgroundFetchWO004Tests {
+    NSArray<TSBGAppRefreshSubscriber *> *_setAside;
+}
+
+// Subscribers persist across runs, and the suite's other tests add their own: each test starts with none.
+// +remove: / +add: change only the in-memory set, never what is persisted.
+- (void)setUp {
+    [super setUp];
+    _setAside = [[TSBGAppRefreshSubscriber subscribers] allValues];
+    for (TSBGAppRefreshSubscriber *s in _setAside) [TSBGAppRefreshSubscriber remove:s];
+}
+
+- (void)tearDown {
+    for (TSBGAppRefreshSubscriber *s in _setAside) [TSBGAppRefreshSubscriber add:s];
+    [super tearDown];
+}
+
+// Installs the stand-in for the rest of the test.  Hosted, a stand-in would replace a live UIApplication: skip.
+// Blocks an earlier test left on the main queue (a cancel's reset, say) run first, against no application, so the
+// stand-in records only what this test causes.
+- (void)installStandInApplication {
+    if ([UIApplication sharedApplication]) {
+        XCTSkip(@"written for this target's xctest process, which has no UIApplication; hosted, the stand-in would "
+                @"replace a live one");
+    }
+    [self drainMainQueue];
+    wo004Application = [WO004Application new];
+    WO004ExchangeSharedApplication();
+    [self addTeardownBlock:^{
+        WO004ExchangeSharedApplication();
+        wo004Application = nil;
+    }];
+}
+
+// Lets the blocks the SDK queued on the main queue run.
+- (void)drainMainQueue {
+    XCTestExpectation *drained = [self expectationWithDescription:@"main queue drained"];
+    dispatch_async(dispatch_get_main_queue(), ^{ [drained fulfill]; });
+    [self waitForExpectations:@[drained] timeout:2.0];
+}
+
+// -- change 1: stop() resets the legacy interval ---------------------------
+
+// stop() removes the last listener, which cancels the fetch.  Where BGTaskScheduler is unavailable, and where the app
+// does not permit com.transistorsoft.fetch, the SDK armed UIKit's legacy interval instead, so the cancel must also set it
+// back to Never.
+- (void)test_wo_004_cancelResetsLegacyFetchInterval {
+    [self installStandInApplication];
+
+    [[TSBackgroundFetch sharedInstance] cancelBGAppRefresh];
+    [self drainMainQueue];
+
+    XCTAssertTrue([wo004Application.intervals containsObject:@(UIApplicationBackgroundFetchIntervalNever)],
+                  @"cancelBGAppRefresh must set the legacy fetch interval to Never (got %@)", wo004Application.intervals);
+}
+
+// A fetch delivered after the cancel must not arm the interval again: Never stays the last value written.
+- (void)test_wo_004_fetchAfterCancelLeavesIntervalNever {
+    [self installStandInApplication];
+    TSBackgroundFetch *fetch = [TSBackgroundFetch sharedInstance];
+
+    [fetch cancelBGAppRefresh];
+    [fetch performFetchWithCompletionHandler:^(UIBackgroundFetchResult r) {}
+                            applicationState:UIApplicationStateBackground];
+    [self drainMainQueue];
+
+    XCTAssertEqualObjects(wo004Application.intervals.lastObject, @(UIApplicationBackgroundFetchIntervalNever),
+                          @"a fetch after stop() armed the legacy interval again (got %@)", wo004Application.intervals);
+}
+
+// -- change 3: a fetch with no subscriber is answered at once --------------
+
+// Nothing would finish it, and rescheduling would arm again what stop() cancelled: completed with no data, at once,
+// with no background task and no interval written.
+- (void)test_wo_004_fetchWithoutSubscriberCompletesAtOnceWithNoData {
+    [self installStandInApplication];
+    TSBackgroundFetch *fetch = [TSBackgroundFetch sharedInstance];
+    __block NSInteger calls = 0;
+    __block UIBackgroundFetchResult result = UIBackgroundFetchResultFailed;
+
+    [fetch performFetchWithCompletionHandler:^(UIBackgroundFetchResult r) { calls++; result = r; }
+                            applicationState:UIApplicationStateBackground];
+
+    XCTAssertEqual(calls, 1, @"completed at once, inside the call");
+    XCTAssertEqual(result, UIBackgroundFetchResultNoData);
+    XCTAssertNil(fetch.completionHandler, @"the handler is not kept");
+    XCTAssertEqual(wo004Application.backgroundTasksBegun, 0, @"no background task is begun for it");
+    [self drainMainQueue];
+    XCTAssertEqual(wo004Application.intervals.count, (NSUInteger)0, @"no interval is written for it (got %@)",
+                   wo004Application.intervals);
+}
+
+// -- change 2: the expiry completes a fetch no unfinished subscriber holds -
+
+// The last subscriber removed while its fetch is held (stop() during the fetch): the expiry completes UIKit's handler,
+// as the BGTaskScheduler path's expiration handler completes its task with NO.
+- (void)test_wo_004_legacyExpiryAfterLastSubscriberRemovedCompletesHandler {
+    TSBackgroundFetch *fetch = [TSBackgroundFetch sharedInstance];
+    XCTestExpectation *fetched = [self expectationWithDescription:@"fetch callback"];
+    [fetch addListener:@"wo004.only"
+              callback:^(NSString *taskId) { [fetched fulfill]; }
+               timeout:^(NSString *taskId) {}];
+    __block NSInteger calls = 0;
+    __block UIBackgroundFetchResult result = UIBackgroundFetchResultNewData;
+    [fetch performFetchWithCompletionHandler:^(UIBackgroundFetchResult r) { calls++; result = r; }
+                            applicationState:UIApplicationStateBackground];
+    [self waitForExpectations:@[fetched] timeout:2.0];
+
+    [fetch removeListener:@"wo004.only"];
+    XCTAssertEqual(calls, 0, @"held until the expiry");
+    [fetch _expireLegacyFetch];
+
+    XCTAssertEqual(calls, 1, @"the expiry completes UIKit's handler, once");
+    XCTAssertEqual(result, UIBackgroundFetchResultFailed);
+    XCTAssertNil(fetch.completionHandler, @"the handler is released");
+}
+
+// Subscribers left, but every one already finished (another was removed before it finished): none takes the timeout,
+// so the expiry completes the handler too.
+- (void)test_wo_004_legacyExpiryWithOnlyFinishedSubscribersCompletesHandler {
+    TSBackgroundFetch *fetch = [TSBackgroundFetch sharedInstance];
+    XCTestExpectation *fetchedA = [self expectationWithDescription:@"fetch callback A"];
+    XCTestExpectation *fetchedB = [self expectationWithDescription:@"fetch callback B"];
+    [fetch addListener:@"wo004.a" callback:^(NSString *taskId) { [fetchedA fulfill]; } timeout:^(NSString *taskId) {}];
+    [fetch addListener:@"wo004.b" callback:^(NSString *taskId) { [fetchedB fulfill]; } timeout:^(NSString *taskId) {}];
+    [self addTeardownBlock:^{
+        [[TSBackgroundFetch sharedInstance] removeListener:@"wo004.a"];
+        [[TSBackgroundFetch sharedInstance] removeListener:@"wo004.b"];
+    }];
+    __block NSInteger calls = 0;
+    __block UIBackgroundFetchResult result = UIBackgroundFetchResultNewData;
+    [fetch performFetchWithCompletionHandler:^(UIBackgroundFetchResult r) { calls++; result = r; }
+                            applicationState:UIApplicationStateBackground];
+    [self waitForExpectations:@[fetchedA, fetchedB] timeout:2.0];
+
+    [fetch finish:@"wo004.a"];              // 1 of 2
+    [fetch removeListener:@"wo004.b"];      // B leaves without finishing: A, finished, is all that is left
+    XCTAssertEqual(calls, 0, @"held until the expiry");
+    [fetch _expireLegacyFetch];
+
+    XCTAssertEqual(calls, 1, @"the expiry completes UIKit's handler, once");
+    XCTAssertEqual(result, UIBackgroundFetchResultFailed);
+}
+
+// With a subscriber that takes the timeout, the expiry leaves the handler to it: its own finish completes it.
+- (void)test_wo_004_legacyExpiryLeavesHandlerToSubscriberTimeout {
+    TSBackgroundFetch *fetch = [TSBackgroundFetch sharedInstance];
+    XCTestExpectation *fetched = [self expectationWithDescription:@"fetch callback"];
+    XCTestExpectation *timedOut = [self expectationWithDescription:@"timeout callback"];
+    [fetch addListener:@"wo004.listener"
+              callback:^(NSString *taskId) { [fetched fulfill]; }
+               timeout:^(NSString *taskId) { [timedOut fulfill]; }];
+    [self addTeardownBlock:^{ [[TSBackgroundFetch sharedInstance] removeListener:@"wo004.listener"]; }];
+
+    __block NSInteger calls = 0;
+    __block UIBackgroundFetchResult result = UIBackgroundFetchResultFailed;
+    [fetch performFetchWithCompletionHandler:^(UIBackgroundFetchResult r) { calls++; result = r; }
+                            applicationState:UIApplicationStateBackground];
+    [self waitForExpectations:@[fetched] timeout:2.0];
+
+    [fetch _expireLegacyFetch];
+    XCTAssertEqual(calls, 0, @"a subscriber took the timeout: the expiry must not complete the handler itself");
+    [self waitForExpectations:@[timedOut] timeout:2.0];
+    XCTAssertEqual(calls, 0, @"nor anything the expiry queued on the main queue");
+
+    [fetch finish:@"wo004.listener"];
+    XCTAssertEqual(calls, 1, @"the subscriber's finish completes the handler, once");
+    XCTAssertNotEqual(result, UIBackgroundFetchResultFailed, @"completed by the subscriber's finish, not by the expiry");
 }
 
 @end
